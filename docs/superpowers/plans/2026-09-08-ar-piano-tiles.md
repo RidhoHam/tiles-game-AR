@@ -116,12 +116,12 @@ test('parseSongChart normalizes notes and chords sorted by beat', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test tests/songParser.test.mjs`  
 Expected: FAIL with module not found or functions not defined.
 
-- [ ] **Step 3: Implement minimal code in `src/engine/songParser.js`**
+- [x] **Step 3: Implement minimal code in `src/engine/songParser.js`**
 
 ```javascript
 // src/engine/songParser.js
@@ -245,16 +245,16 @@ export function convertTilesJsonToChart(tilesJson) {
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test tests/songParser.test.mjs`  
 Expected: All tests PASS.
 
-- [ ] **Step 5: Create Canonical Demo Songs (`data/songs/demo_canon.json` and `data/songs/demo_twinkle.json`)**
+- [x] **Step 5: Create Canonical Demo Songs (`data/songs/demo_canon.json` and `data/songs/demo_twinkle.json`)**
 
 Generate JSON chart fixtures conforming to PRD for Canon in D and Twinkle Twinkle (with single notes, chords, 4-lane and 8-lane formats).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/engine/songParser.js tests/songParser.test.mjs data/songs/
@@ -345,21 +345,21 @@ test('evaluates chord completeness based on simultaneous notes', () => {
 });
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `node --test tests/hitDetector.test.mjs`  
 Expected: FAIL with module not found.
 
-- [ ] **Step 3: Implement minimal code in `src/engine/hitDetector.js`**
+- [x] **Step 3: Implement minimal code in `src/engine/hitDetector.js`**
 
 Implement `HitDetector` class with bounds checking, crossing logic, candidate selection, timing difference scoring, and chord completeness evaluation.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `node --test tests/hitDetector.test.mjs`  
 Expected: All tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/engine/hitDetector.js tests/hitDetector.test.mjs
@@ -482,11 +482,11 @@ git commit -m "feat: implement AR calibration flow, HUD, and mobile Web AR viewp
 **Interfaces:**
 - Seamless switching between 2D desktop preview player and 3D Web AR hand-tracking experience.
 
-- [ ] **Step 1: Update `index.html`**
-- [ ] **Step 2: Update `app.py`**
-- [ ] **Step 3: Update `README.md`**
-- [ ] **Step 4: Run all automated tests**
-- [ ] **Step 5: Commit**
+- [x] **Step 1: Update `index.html`**
+- [x] **Step 2: Update `app.py`**
+- [x] **Step 3: Update `README.md`**
+- [x] **Step 4: Run all automated tests**
+- [x] **Step 5: Commit**
 
 ```bash
 git add index.html app.py README.md

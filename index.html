@@ -130,6 +130,37 @@
     box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
   }
 
+  /* AR Mode Header Badge */
+  .ar-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(56, 189, 248, 0.25));
+    border: 1px solid #38bdf8;
+    color: #e0f2fe;
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.35);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    animation: arPulse 3s infinite ease-in-out;
+  }
+  .ar-mode-badge:hover {
+    background: linear-gradient(135deg, #4f46e5, #0284c7);
+    color: #ffffff;
+    border-color: #7dd3fc;
+    box-shadow: 0 0 20px rgba(56, 189, 248, 0.65);
+    transform: translateY(-1px) scale(1.02);
+  }
+  @keyframes arPulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.3); }
+    50% { box-shadow: 0 0 18px rgba(99, 102, 241, 0.6), 0 0 26px rgba(56, 189, 248, 0.4); }
+  }
+
   .control-group {
     display: flex;
     align-items: center;
@@ -483,6 +514,11 @@
       <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Piano Tiles (Rhythm lanes)">🎮 Tiles</button>
       <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano Roll (Tuts piano asli & falling notes Synthesia)">🎹 Real Piano</button>
     </div>
+
+    <!-- Web AR 3D Mode Launch Badge -->
+    <a href="ar.html" class="ar-mode-badge" id="arModeBadge" title="Launch 3D Web AR Mode with Hand Tracking">
+      🥽 AR Mode (Play in Space)
+    </a>
 
     <div class="controls">
       <label class="file-btn">

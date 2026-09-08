@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """
 AR Piano Tiles — MIDI to Tile Application & Converter
-Run without arguments to launch the Web visualizer in your browser:
+Run without arguments to launch the 2D Web player in your browser:
     python app.py
+
+Run with --ar to launch Web AR 3D Mode in your browser:
+    python app.py --ar
 
 Or convert a MIDI file directly to tile JSON from terminal:
     python app.py convert demo.mid -o tiles.json --lanes 8
@@ -30,27 +33,51 @@ def find_free_port(start_port=8000, max_attempts=50):
                 return port
     return start_port
 
-def run_server(port=8000):
+class ARHTTPRequestHandler(SimpleHTTPRequestHandler):
+    """Custom HTTP request handler with explicit MIME types for modern Web AR modules."""
+    extensions_map = SimpleHTTPRequestHandler.extensions_map.copy()
+    extensions_map.update({
+        '.mjs': 'application/javascript',
+        '.js': 'application/javascript',
+        '.json': 'application/json',
+        '.mp3': 'audio/mpeg',
+        '.mid': 'audio/midi',
+        '.midi': 'audio/midi',
+        '.wasm': 'application/wasm',
+    })
+
+    def end_headers(self):
+        self.send_header('Access-Control-Allow-Origin', '*')
+        super().end_headers()
+
+def run_server(port=8000, open_ar=False, open_browser=True):
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
     actual_port = find_free_port(port)
     
     server_address = ('127.0.0.1', actual_port)
-    httpd = HTTPServer(server_address, SimpleHTTPRequestHandler)
+    httpd = HTTPServer(server_address, ARHTTPRequestHandler)
     
-    url = f"http://127.0.0.1:{actual_port}/index.html"
-    print("=" * 60)
-    print(" [MIDI] AR Piano Tiles - MIDI to Tile Preview Server")
-    print("=" * 60)
-    print(f"[*] Server aktif di: {url}")
-    print("[*] Membuka browser secara otomatis...")
-    print("[*] Tekan Ctrl+C di terminal untuk menghentikan server.")
-    print("=" * 60)
+    url_2d = f"http://127.0.0.1:{actual_port}/index.html"
+    url_ar = f"http://127.0.0.1:{actual_port}/ar.html"
+    target_url = url_ar if open_ar else url_2d
     
-    webbrowser.open(url)
+    print("=" * 65)
+    print(" 🎹 AR Piano Tiles — Play the Song in Space")
+    print("=" * 65)
+    print(f" [*] 2D Player URL : {url_2d}")
+    print(f" [*] Web AR 3D URL : {url_ar}")
+    print(f" [*] Active Target : {'🥽 Web AR 3D Mode' if open_ar else '🎮 2D Player Mode'}")
+    if open_browser:
+        print(f" [*] Opening browser: {target_url}")
+    print(" [*] Press Ctrl+C in terminal to stop server.")
+    print("=" * 65)
+    
+    if open_browser:
+        webbrowser.open(target_url)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
-        print("\n[!] Server dihentikan.")
+        print("\n[!] Server stopped.")
         httpd.server_close()
 
 def parse_midi_to_tiles(midi_path, lane_count=8):
@@ -230,13 +257,15 @@ def main():
     
     # Server arguments
     parser.add_argument('--port', type=int, default=8000, help='Port HTTP server (default: 8000)')
+    parser.add_argument('--ar', action='store_true', help='Buka langsung Web AR 3D Mode (ar.html) di browser')
+    parser.add_argument('--no-browser', action='store_true', help='Jalankan server tanpa otomatis membuka browser')
     
     args = parser.parse_args()
     
     if args.subcommand == 'convert':
         cli_convert(args)
     else:
-        run_server(port=args.port)
+        run_server(port=args.port, open_ar=args.ar, open_browser=not args.no_browser)
 
 if __name__ == '__main__':
     main()
