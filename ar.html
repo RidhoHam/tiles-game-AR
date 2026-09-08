@@ -55,6 +55,16 @@
       display: block;
     }
 
+    #gesture-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw !important;
+      height: 100vh !important;
+      pointer-events: none;
+      z-index: 10;
+      display: block;
+    }
+
     /* Common Glassmorphism */
     .glass-card {
       background: var(--panel-bg);
@@ -598,6 +608,9 @@
   <!-- Three.js 3D Viewport Container -->
   <div id="ar-container"></div>
 
+  <!-- 2D Spatial Gesture Overlay Canvas for Holographic Table Grid & Pinch Animation -->
+  <canvas id="gesture-canvas"></canvas>
+
   <!-- Live Performance & Hand Status Badge -->
   <div id="perf-badge" style="position: fixed; top: 18px; right: 18px; z-index: 60; font-family: 'Outfit', monospace; font-size: 11px; background: rgba(13, 17, 27, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 6px 12px; color: #38bdf8; display: flex; align-items: center; gap: 8px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
     <span id="fps-badge-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
@@ -838,6 +851,8 @@
     let songStartTimeSec = 0;
     let lastHandPositions = { Left: null, Right: null };
     let fallbackInteractionActive = false;
+    let gestureCanvas = null;
+    let gestureCtx = null;
 
     // Preloaded canonical demo songs data fallback
     const DEMO_SONGS = {
@@ -967,6 +982,22 @@
 
       // Attempt camera fallback right away for AR background
       await arScene.initFallbackCamera(container);
+
+      // 6. Initialize 2D Gesture Canvas
+      gestureCanvas = document.getElementById('gesture-canvas');
+      if (gestureCanvas) {
+        gestureCtx = gestureCanvas.getContext('2d');
+        const resizeGesture = () => {
+          const dpr = window.devicePixelRatio || 1;
+          gestureCanvas.width = window.innerWidth * dpr;
+          gestureCanvas.height = window.innerHeight * dpr;
+          gestureCanvas.style.width = window.innerWidth + 'px';
+          gestureCanvas.style.height = window.innerHeight + 'px';
+          gestureCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        };
+        window.addEventListener('resize', resizeGesture);
+        resizeGesture();
+      }
 
       // Check WebXR availability
       if (navigator.xr && navigator.xr.isSessionSupported) {
@@ -1183,6 +1214,465 @@
       }
     }
 
+    /**
+     * Draws the 2D Spatial Gesture Overlay:
+     * - Animated holographic table rectangle spanning between user hands
+     * - Dynamic corner brackets [ ] and neon dashed borders
+     * - Real-time centimeter width badge (e.g. 📏 LEBAR ARENA: 85 cm)
+     * - Pinch indicators (👌 PINCH) with golden sparks
+     * - In-game fingertip crosshairs with ripples
+     */
+    function drawGestureOverlay(ctx, hands, width, height, state, span, arenaWidth, laneCount) {
+      ctx.clearRect(0, 0, width, height);
+      const time = performance.now();
+
+      // Retrieve screen canvas coordinates for a hand's index tip
+      function getHandPoint(hand) {
+        if (!hand) return null;
+        let nx = 0.5, ny = 0.5;
+        if (hand.cameraIndexTip) {
+          nx = hand.cameraIndexTip.x;
+          ny = hand.cameraIndexTip.y;
+        } else if (hand.indexTip) {
+          nx = hand.indexTip.x / 0.8 + 0.5;
+          ny = 0.5 - hand.indexTip.y / 0.6;
+        }
+        return {
+          x: Math.max(20, Math.min(width - 20, nx * width)),
+          y: Math.max(20, Math.min(height - 20, ny * height)),
+          nx,
+          ny
+        };
+      }
+
+      // Retrieve screen canvas coordinates for a hand's thumb tip
+      function getThumbPoint(hand) {
+        if (!hand) return null;
+        let nx = 0.5, ny = 0.5;
+        if (hand.cameraThumbTip) {
+          nx = hand.cameraThumbTip.x;
+          ny = hand.cameraThumbTip.y;
+        } else if (hand.thumbTip) {
+          nx = hand.thumbTip.x / 0.8 + 0.5;
+          ny = 0.5 - hand.thumbTip.y / 0.6;
+        }
+        return {
+          x: Math.max(20, Math.min(width - 20, nx * width)),
+          y: Math.max(20, Math.min(height - 20, ny * height)),
+          nx,
+          ny
+        };
+      }
+
+      // Helper to draw corner brackets [ ]
+      function drawCornerBrackets(pts, bracketLen = 24, strokeColor = '#facc15') {
+        const [p1, p2, p3, p4] = pts;
+        ctx.save();
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.shadowColor = strokeColor;
+        ctx.shadowBlur = 12;
+
+        // Top-Left (p1)
+        ctx.beginPath();
+        ctx.moveTo(p1.x, p1.y + bracketLen);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.lineTo(p1.x + bracketLen, p1.y);
+        ctx.stroke();
+
+        // Top-Right (p2)
+        ctx.beginPath();
+        ctx.moveTo(p2.x - bracketLen, p2.y);
+        ctx.lineTo(p2.x, p2.y);
+        ctx.lineTo(p2.x, p2.y + bracketLen);
+        ctx.stroke();
+
+        // Bottom-Right (p3)
+        ctx.beginPath();
+        ctx.moveTo(p3.x, p3.y - bracketLen);
+        ctx.lineTo(p3.x, p3.y);
+        ctx.lineTo(p3.x - bracketLen, p3.y);
+        ctx.stroke();
+
+        // Bottom-Left (p4)
+        ctx.beginPath();
+        ctx.moveTo(p4.x + bracketLen, p4.y);
+        ctx.lineTo(p4.x, p4.y);
+        ctx.lineTo(p4.x, p4.y - bracketLen);
+        ctx.stroke();
+
+        ctx.restore();
+      }
+
+      // 1. STATE: SCAN_SURFACE (Table surface detection & 2-hand pinch/stretch)
+      if (state === UI_STATES.SCAN_SURFACE) {
+        if (hands && hands.length === 2) {
+          const leftHand = hands.find(h => h.handedness === 'Left') || hands[0];
+          const rightHand = hands.find(h => h.handedness === 'Right') || hands[1];
+
+          const lPt = getHandPoint(leftHand);
+          const rPt = getHandPoint(rightHand);
+          const lThumb = getThumbPoint(leftHand);
+          const rThumb = getThumbPoint(rightHand);
+
+          if (lPt && rPt) {
+            const minX = Math.min(lPt.x, rPt.x) - 20;
+            const maxX = Math.max(lPt.x, rPt.x) + 20;
+            const spanWidthPx = Math.max(160, maxX - minX);
+            const midY = (lPt.y + rPt.y) / 2;
+
+            // Perspective table box coordinates (trapezoid receding into screen)
+            const deskHeight = Math.max(130, spanWidthPx * 0.42);
+            const topY = Math.max(50, midY - deskHeight * 0.45);
+            const botY = Math.min(height - 40, midY + deskHeight * 0.55);
+            const topInset = spanWidthPx * 0.08;
+
+            const p1 = { x: minX + topInset, y: topY }; // Top-Left
+            const p2 = { x: maxX - topInset, y: topY }; // Top-Right
+            const p3 = { x: maxX, y: botY };            // Bottom-Right
+            const p4 = { x: minX, y: botY };            // Bottom-Left
+
+            // 1a. Translucent glowing fill
+            ctx.save();
+            const bgGrad = ctx.createLinearGradient(minX, topY, maxX, botY);
+            bgGrad.addColorStop(0, 'rgba(56, 189, 248, 0.16)');
+            bgGrad.addColorStop(1, 'rgba(236, 72, 153, 0.16)');
+            ctx.fillStyle = bgGrad;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineTo(p3.x, p3.y);
+            ctx.lineTo(p4.x, p4.y);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+
+            // 1b. Perspective Lane Dividers inside rectangle
+            ctx.save();
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 6]);
+            const numLanes = laneCount || 4;
+            for (let i = 1; i < numLanes; i++) {
+              const t = i / numLanes;
+              const tx = p1.x + t * (p2.x - p1.x);
+              const bx = p4.x + t * (p3.x - p4.x);
+              ctx.beginPath();
+              ctx.moveTo(tx, p1.y);
+              ctx.lineTo(bx, p4.y);
+              ctx.stroke();
+            }
+            ctx.restore();
+
+            // 1c. Animated Glowing Dashed Outer Border
+            ctx.save();
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = '#38bdf8';
+            ctx.shadowBlur = 14;
+            ctx.setLineDash([12, 8]);
+            ctx.lineDashOffset = -time / 30;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.lineTo(p3.x, p3.y);
+            ctx.lineTo(p4.x, p4.y);
+            ctx.closePath();
+            ctx.stroke();
+            ctx.restore();
+
+            // 1d. Glowing Hit Line at desk front edge (p4 to p3)
+            ctx.save();
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 4;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.moveTo(p4.x, p4.y);
+            ctx.lineTo(p3.x, p3.y);
+            ctx.stroke();
+            ctx.restore();
+
+            // 1e. Corner Brackets [ ]
+            drawCornerBrackets([p1, p2, p3, p4], 26, '#facc15');
+
+            // 1f. Connecting Laser Line between Hands
+            ctx.save();
+            const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
+            ctx.strokeStyle = bothPinching ? '#facc15' : 'rgba(56, 189, 248, 0.85)';
+            ctx.lineWidth = bothPinching ? 3 : 2;
+            ctx.shadowColor = bothPinching ? '#facc15' : '#38bdf8';
+            ctx.shadowBlur = 10;
+            ctx.setLineDash([8, 6]);
+            ctx.lineDashOffset = -time / 20;
+            ctx.beginPath();
+            ctx.moveTo(lPt.x, lPt.y);
+            ctx.lineTo(rPt.x, rPt.y);
+            ctx.stroke();
+            ctx.restore();
+
+            // 1g. Floating Centimeter Badge Directly Above Rectangle
+            const badgeCenterX = (p1.x + p2.x) / 2;
+            const badgeY = Math.max(38, topY - 32);
+            const widthCm = Math.round((arenaWidth || 0.8) * 100);
+
+            ctx.save();
+            const badgeText = `📏 LEBAR ARENA: ${widthCm} cm`;
+            ctx.font = 'bold 15px "Outfit", system-ui, sans-serif';
+            const metrics = ctx.measureText(badgeText);
+            const badgeW = Math.max(210, metrics.width + 36);
+            const badgeH = 34;
+
+            ctx.fillStyle = 'rgba(11, 15, 25, 0.90)';
+            ctx.strokeStyle = bothPinching ? '#facc15' : '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.shadowColor = bothPinching ? '#facc15' : '#38bdf8';
+            ctx.shadowBlur = 12;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+              ctx.roundRect(badgeCenterX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 17);
+            } else {
+              ctx.rect(badgeCenterX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH);
+            }
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = bothPinching ? '#facc15' : '#f8fafc';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(badgeText, badgeCenterX, badgeY);
+            ctx.restore();
+
+            // 1h. Visual Pinch Cues & Badges on Fingertips
+            const drawPinchIndicator = (pt, thumbPt, hand, color, label) => {
+              ctx.save();
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, 14, 0, Math.PI * 2);
+              ctx.fillStyle = color;
+              ctx.shadowColor = color;
+              ctx.shadowBlur = 14;
+              ctx.fill();
+
+              ctx.beginPath();
+              ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+              ctx.fillStyle = '#ffffff';
+              ctx.fill();
+
+              if (hand.isPinching && thumbPt) {
+                ctx.beginPath();
+                ctx.arc(thumbPt.x, thumbPt.y, 10, 0, Math.PI * 2);
+                ctx.fillStyle = '#facc15';
+                ctx.shadowColor = '#facc15';
+                ctx.shadowBlur = 12;
+                ctx.fill();
+
+                ctx.strokeStyle = '#facc15';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(pt.x, pt.y);
+                ctx.lineTo(thumbPt.x, thumbPt.y);
+                ctx.stroke();
+
+                const bx = pt.x + (hand.handedness === 'Left' ? -55 : 20);
+                const by = pt.y - 24;
+                ctx.fillStyle = 'rgba(250, 204, 21, 0.95)';
+                ctx.beginPath();
+                if (ctx.roundRect) {
+                  ctx.roundRect(bx, by - 12, 72, 22, 6);
+                } else {
+                  ctx.rect(bx, by - 12, 72, 22);
+                }
+                ctx.fill();
+                ctx.fillStyle = '#0f172a';
+                ctx.font = 'bold 11px "Outfit", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('👌 PINCH', bx + 36, by + 1);
+              } else {
+                ctx.fillStyle = color;
+                ctx.font = 'bold 12px "Inter", sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(label, pt.x, pt.y - 18);
+              }
+              ctx.restore();
+            };
+
+            drawPinchIndicator(lPt, lThumb, leftHand, '#ec4899', '🖐️ Kiri (Bass)');
+            drawPinchIndicator(rPt, rThumb, rightHand, '#06b6d4', '🖐️ Kanan (Melodi)');
+
+            // 1i. Floating Bottom Action Guidance
+            ctx.save();
+            const subMsg = bothPinching
+              ? '✨ DUA TANGAN PINCH: Geser kiri/kanan untuk resize • Tap layar untuk kunci!'
+              : '✨ Rentangkan kedua tangan di atas meja • Tap layar atau klik tombol untuk mulai!';
+            ctx.font = '500 13px "Inter", sans-serif';
+            const subMetrics = ctx.measureText(subMsg);
+            const subW = subMetrics.width + 28;
+            const subH = 28;
+            const subY = Math.min(height - 20, botY + 30);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+              ctx.roundRect(badgeCenterX - subW / 2, subY - subH / 2, subW, subH, 14);
+            } else {
+              ctx.rect(badgeCenterX - subW / 2, subY - subH / 2, subW, subH);
+            }
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = bothPinching ? '#facc15' : '#38bdf8';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(subMsg, badgeCenterX, subY);
+            ctx.restore();
+          }
+        } else if (hands && hands.length === 1) {
+          // 1 Hand detected
+          const hand = hands[0];
+          const pt = getHandPoint(hand);
+          if (pt) {
+            const isLeft = hand.handedness === 'Left';
+            const color = isLeft ? '#ec4899' : '#06b6d4';
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, 16, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 16;
+            ctx.fill();
+
+            const msg = '👋 Angkat tangan satu lagi di atas meja untuk mengatur lebar arena!';
+            ctx.font = 'bold 13px "Outfit", sans-serif';
+            const msgW = ctx.measureText(msg).width + 26;
+            const pillX = Math.max(msgW / 2 + 10, Math.min(width - msgW / 2 - 10, pt.x));
+            const pillY = Math.max(35, pt.y - 36);
+
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+              ctx.roundRect(pillX - msgW / 2, pillY - 16, msgW, 32, 16);
+            } else {
+              ctx.rect(pillX - msgW / 2, pillY - 16, msgW, 32);
+            }
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#f8fafc';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(msg, pillX, pillY);
+            ctx.restore();
+          }
+        } else {
+          // 0 Hands detected: Animated guide rectangle
+          const boxW = Math.min(width * 0.72, 480);
+          const boxH = Math.max(120, boxW * 0.38);
+          const boxX = (width - boxW) / 2;
+          const boxY = height * 0.55;
+
+          const p1 = { x: boxX + 24, y: boxY };
+          const p2 = { x: boxX + boxW - 24, y: boxY };
+          const p3 = { x: boxX + boxW, y: boxY + boxH };
+          const p4 = { x: boxX, y: boxY + boxH };
+
+          ctx.save();
+          const guideGrad = ctx.createLinearGradient(boxX, boxY, boxX + boxW, boxY + boxH);
+          guideGrad.addColorStop(0, 'rgba(56, 189, 248, 0.08)');
+          guideGrad.addColorStop(1, 'rgba(99, 102, 241, 0.08)');
+          ctx.fillStyle = guideGrad;
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.lineTo(p3.x, p3.y);
+          ctx.lineTo(p4.x, p4.y);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([8, 6]);
+          ctx.lineDashOffset = -time / 35;
+          ctx.stroke();
+
+          ctx.strokeStyle = '#facc15';
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(p4.x, p4.y);
+          ctx.lineTo(p3.x, p3.y);
+          ctx.stroke();
+
+          drawCornerBrackets([p1, p2, p3, p4], 20, 'rgba(250, 204, 21, 0.7)');
+
+          const pulse = Math.sin(time / 250) * 4;
+          const guideMsg1 = '👋 Letakkan 2 tangan di atas meja & cubit (pinch)';
+          const guideMsg2 = 'Gerakkan tangan kiri & kanan untuk membentuk arena piano!';
+
+          ctx.font = 'bold 14px "Outfit", sans-serif';
+          ctx.fillStyle = '#38bdf8';
+          ctx.textAlign = 'center';
+          ctx.fillText(guideMsg1, width / 2, boxY + boxH / 2 - 10 + pulse);
+
+          ctx.font = '12px "Inter", sans-serif';
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText(guideMsg2, width / 2, boxY + boxH / 2 + 12 + pulse);
+
+          ctx.restore();
+        }
+      }
+
+      // 2. STATE: PLAYING (Fingertip targets and ripples)
+      if (state === UI_STATES.PLAYING && hands && hands.length > 0) {
+        for (const hand of hands) {
+          const pt = getHandPoint(hand);
+          if (!pt) continue;
+
+          const isLeft = hand.handedness === 'Left';
+          const color = isLeft ? '#ec4899' : '#06b6d4';
+          const label = isLeft ? 'L-Bass' : 'R-Melody';
+
+          ctx.save();
+          // Outer glowing ring
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 18, 0, Math.PI * 2);
+          ctx.strokeStyle = color;
+          ctx.lineWidth = 2.5;
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 12;
+          ctx.stroke();
+
+          // Ripple effect
+          const rippleR = 18 + (time % 800) / 80;
+          const rippleAlpha = Math.max(0, 1 - (time % 800) / 800);
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, rippleR, 0, Math.PI * 2);
+          ctx.strokeStyle = isLeft ? `rgba(236, 72, 153, ${rippleAlpha})` : `rgba(6, 182, 212, ${rippleAlpha})`;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          // Solid center dot
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+          ctx.fillStyle = '#ffffff';
+          ctx.shadowBlur = 6;
+          ctx.fill();
+
+          ctx.font = 'bold 10px "Inter", sans-serif';
+          ctx.fillStyle = color;
+          ctx.textAlign = 'center';
+          ctx.fillText(label, pt.x, pt.y - 24);
+
+          ctx.restore();
+        }
+      }
+    }
+
     function startMainRenderLoop() {
       let lastTime = performance.now();
       let lastVisionTimestamp = 0;
@@ -1223,19 +1713,20 @@
         }
 
         // Handle SCAN_SURFACE state: 2-Hand Pinch & Stretch Gesture for table placement
+        let currentSpan = null;
         if (currentState === UI_STATES.SCAN_SURFACE) {
           if (cachedHands.length === 2) {
             const leftHand = cachedHands.find(h => h.handedness === 'Left');
             const rightHand = cachedHands.find(h => h.handedness === 'Right');
             if (leftHand && rightHand) {
-              const span = calculateTwoHandSpan(leftHand, rightHand);
-              if (span && span.width >= 0.25) {
-                arScene.updatePinchPlacement(span);
+              currentSpan = calculateTwoHandSpan(leftHand, rightHand);
+              if (currentSpan && currentSpan.width >= 0.20) {
+                arScene.updatePinchPlacement(currentSpan);
                 hitDetector.arenaWidth = arScene.arenaWidth;
 
                 const scanInst = document.getElementById('scan-instructions');
                 if (scanInst) {
-                  scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur 2 Tangan Aktif:</span> Lebar Meja: <b>${(span.width * 100).toFixed(0)} cm</b> ${span.bothPinching ? '👌 (Pinch)' : ''}<br>Klik <b>Kunci Arena di Meja Ini</b> atau sentuh meja untuk mengunci!`;
+                  scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur 2 Tangan Aktif:</span> Lebar Meja: <b>${(arScene.arenaWidth * 100).toFixed(0)} cm</b> ${currentSpan.bothPinching ? '👌 (Pinch)' : ''}<br>Klik <b>Kunci Arena di Meja Ini</b> atau sentuh meja untuk mengunci!`;
                 }
               }
             }
@@ -1296,6 +1787,20 @@
 
         if (arScene.renderer && arScene.scene && arScene.camera) {
           arScene.renderer.render(arScene.scene, arScene.camera);
+        }
+
+        // 4. Render 2D Spatial Gesture Overlay (Holographic table rectangle, pinch badges, centimeter readout)
+        if (gestureCtx && gestureCanvas) {
+          drawGestureOverlay(
+            gestureCtx,
+            cachedHands,
+            window.innerWidth,
+            window.innerHeight,
+            currentState,
+            currentSpan,
+            arScene.arenaWidth,
+            selectedLanes
+          );
         }
       };
 

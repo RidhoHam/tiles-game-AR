@@ -85,7 +85,7 @@ export function applyEmaSmoothing(prev, curr, alpha = 0.5) {
     }
 
     // Recursively smooth nested tip objects if present
-    for (const key of ['indexTip', 'thumbTip', 'middleTip', 'wrist', 'ringTip', 'pinkyTip']) {
+    for (const key of ['indexTip', 'thumbTip', 'middleTip', 'wrist', 'ringTip', 'pinkyTip', 'cameraIndexTip', 'cameraThumbTip']) {
       if (curr[key] && prev[key]) {
         result[key] = applyEmaSmoothing(prev[key], curr[key], alpha);
       }
@@ -207,6 +207,9 @@ export function calculateTwoHandSpan(leftHand, rightHand) {
   const centerZ = (leftPt.z + rightPt.z) / 2;
 
   const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
+  const leftCam = leftHand.cameraIndexTip || null;
+  const rightCam = rightHand.cameraIndexTip || null;
+  const cameraWidth = (leftCam && rightCam) ? Math.abs(rightCam.x - leftCam.x) : null;
 
   return {
     width: Number(width.toFixed(4)),
@@ -215,7 +218,10 @@ export function calculateTwoHandSpan(leftHand, rightHand) {
     centerZ: Number(centerZ.toFixed(4)),
     bothPinching,
     leftPt,
-    rightPt
+    rightPt,
+    leftCam,
+    rightCam,
+    cameraWidth: cameraWidth !== null ? Number(cameraWidth.toFixed(4)) : null
   };
 }
 
@@ -264,6 +270,27 @@ export function mapToArenaSpace(input, config = {}) {
 
   // Otherwise transform all landmark keypoints in HandState
   const mapped = { ...input };
+
+  // Store normalized screen/camera coordinates for 2D UI overlay rendering
+  if (input.indexTip) {
+    const rawX = typeof input.indexTip.x === 'number' ? input.indexTip.x : 0.5;
+    const rawY = typeof input.indexTip.y === 'number' ? input.indexTip.y : 0.5;
+    mapped.cameraIndexTip = {
+      x: mirror ? 1.0 - rawX : rawX,
+      y: rawY,
+      z: typeof input.indexTip.z === 'number' ? input.indexTip.z : 0
+    };
+  }
+  if (input.thumbTip) {
+    const rawX = typeof input.thumbTip.x === 'number' ? input.thumbTip.x : 0.5;
+    const rawY = typeof input.thumbTip.y === 'number' ? input.thumbTip.y : 0.5;
+    mapped.cameraThumbTip = {
+      x: mirror ? 1.0 - rawX : rawX,
+      y: rawY,
+      z: typeof input.thumbTip.z === 'number' ? input.thumbTip.z : 0
+    };
+  }
+
   if (input.indexTip) mapped.indexTip = transformPoint(input.indexTip);
   if (input.thumbTip) mapped.thumbTip = transformPoint(input.thumbTip);
   if (input.middleTip) mapped.middleTip = transformPoint(input.middleTip);
@@ -367,14 +394,26 @@ export class HandTracker {
 
       if (FilesetResolver && HandLandmarker) {
         const vision = await FilesetResolver.forVisionTasks(wasmPath);
-        this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath,
-            delegate
-          },
-          runningMode: this.runningMode,
-          numHands: this.numHands
-        });
+        try {
+          this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath,
+              delegate: 'GPU'
+            },
+            runningMode: this.runningMode,
+            numHands: this.numHands
+          });
+        } catch (gpuErr) {
+          console.warn('[HandTracker] GPU delegate initialization failed, falling back to CPU:', gpuErr);
+          this.handLandmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath,
+              delegate: 'CPU'
+            },
+            runningMode: this.runningMode,
+            numHands: this.numHands
+          });
+        }
         this.initialized = true;
       } else {
         this.initialized = true;
@@ -491,6 +530,12 @@ export class HandTracker {
         const smoothedThumb = applyEmaSmoothing(prev.thumbTip, raw.thumbTip, effectiveAlpha);
         const smoothedMiddle = applyEmaSmoothing(prev.middleTip, raw.middleTip, effectiveAlpha);
         const smoothedWrist = applyEmaSmoothing(prev.wrist, raw.wrist, effectiveAlpha);
+        const smoothedCamIndex = (raw.cameraIndexTip && prev.cameraIndexTip)
+          ? applyEmaSmoothing(prev.cameraIndexTip, raw.cameraIndexTip, effectiveAlpha)
+          : (raw.cameraIndexTip || null);
+        const smoothedCamThumb = (raw.cameraThumbTip && prev.cameraThumbTip)
+          ? applyEmaSmoothing(prev.cameraThumbTip, raw.cameraThumbTip, effectiveAlpha)
+          : (raw.cameraThumbTip || null);
 
         const vx = dt > 0 ? (smoothedIndex.x - prev.indexTip.x) / dt : 0;
         const vy = dt > 0 ? (smoothedIndex.y - prev.indexTip.y) / dt : 0;
@@ -502,6 +547,8 @@ export class HandTracker {
           thumbTip: smoothedThumb,
           middleTip: smoothedMiddle,
           wrist: smoothedWrist,
+          cameraIndexTip: smoothedCamIndex,
+          cameraThumbTip: smoothedCamThumb,
           velocity: {
             x: Number(vx.toFixed(4)),
             y: Number(vy.toFixed(4)),

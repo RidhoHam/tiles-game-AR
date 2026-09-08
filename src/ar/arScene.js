@@ -217,18 +217,31 @@ export class ARScene {
     if (!this.three || !this.arenaRoot) return;
     const THREE = this.three;
 
-    // 1. Translucent holographic grid floor
+    // 1. Translucent holographic grid floor with glowing glass underlay
     const floorGeo = new THREE.PlaneGeometry(this.arenaWidth * 1.1, this.arenaDepth * 1.05);
     this.floorMaterial = new THREE.MeshBasicMaterial({
-      color: VFX_COLORS.GRID_FLOOR,
+      color: 0x38bdf8,
       wireframe: true,
       transparent: true,
-      opacity: 0.25
+      opacity: 0.65
     });
     this.floorGridMesh = new THREE.Mesh(floorGeo, this.floorMaterial);
     this.floorGridMesh.rotation.x = -Math.PI / 2;
     this.floorGridMesh.position.set(0, -0.01, this.hitPlaneZ - this.arenaDepth / 2);
     this.arenaRoot.add(this.floorGridMesh);
+
+    // Glowing translucent glass backing so it stands out brightly on wooden desks
+    const glassGeo = new THREE.PlaneGeometry(this.arenaWidth * 1.08, this.arenaDepth * 1.02);
+    const glassMat = new THREE.MeshBasicMaterial({
+      color: 0x0369a1,
+      transparent: true,
+      opacity: 0.22,
+      side: THREE.DoubleSide
+    });
+    this.glassFloorMesh = new THREE.Mesh(glassGeo, glassMat);
+    this.glassFloorMesh.rotation.x = -Math.PI / 2;
+    this.glassFloorMesh.position.set(0, -0.015, this.hitPlaneZ - this.arenaDepth / 2);
+    this.arenaRoot.add(this.glassFloorMesh);
 
     // 2. Lane group (contains dividers & borders)
     this.laneGroup = new THREE.Group();
@@ -519,6 +532,7 @@ export class ARScene {
           video.style.objectFit = 'cover';
           video.style.zIndex = '0';
           video.style.pointerEvents = 'none';
+          video.style.transform = 'scaleX(-1)';
           (container || document.body).prepend(video);
         }
         video.srcObject = this.cameraStream;
