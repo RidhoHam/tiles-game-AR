@@ -461,9 +461,9 @@ git commit -m "feat: implement 3D holographic arena, falling cuboid tiles, and V
   * In-game HUD: Floating judgement animations, Score, Combo counter, Song progress bar.
   * Result screen: Score, Accuracy %, Max Combo, Chord Accuracy %, punchline *"You built XX% of the song in space!"*.
 
-- [ ] **Step 1: Implement `src/ui/arUI.js`**
-- [ ] **Step 2: Implement `ar.html`**
-- [ ] **Step 3: Commit**
+- [x] **Step 1: Implement `src/ui/arUI.js`**
+- [x] **Step 2: Implement `ar.html`**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/ui/arUI.js ar.html

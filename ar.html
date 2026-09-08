@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>AR Piano Tiles — Play the Song in Space</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --panel-bg: rgba(13, 17, 27, 0.82);
+      --panel-border: rgba(255, 255, 255, 0.12);
+      --primary: #6366f1;
+      --accent-cyan: #38bdf8;
+      --accent-magenta: #ec4899;
+      --accent-gold: #facc15;
+      --accent-green: #22c55e;
+      --accent-red: #ef4444;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    #ar-container {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
+    /* Common Glassmorphism */
+    .glass-card {
+      background: var(--panel-bg);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--panel-border);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+    }
+
+    /* Utility */
+    .hidden {
+      display: none !important;
+    }
+
+    /* Top Scan & Placement Banner */
+    #scan-banner {
+      position: fixed;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 50;
+      padding: 14px 22px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      max-width: 90vw;
+      text-align: center;
+      animation: bannerFloat 2.5s ease-in-out infinite alternate;
+    }
+
+    @keyframes bannerFloat {
+      0% { transform: translateX(-50%) translateY(0); }
+      100% { transform: translateX(-50%) translateY(-4px); }
+    }
+
+    #scan-banner h2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      background: linear-gradient(135deg, #a5b4fc, #38bdf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    #scan-banner p {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .action-btn {
+      margin-top: 4px;
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: #fff;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 14px;
+      padding: 10px 22px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .action-btn:active {
+      transform: scale(0.96);
+    }
+
+    .action-btn.secondary {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-main);
+      border-color: rgba(255, 255, 255, 0.15);
+      box-shadow: none;
+    }
+
+    /* HUD Layer */
+    #hud-layer {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 30;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 20px 18px;
+    }
+
+    .hud-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      pointer-events: auto;
+    }
+
+    .hud-score-card {
+      padding: 10px 18px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .hud-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+    }
+
+    .hud-score-value {
+      font-family: 'Outfit', sans-serif;
+      font-size: 22px;
+      font-weight: 800;
+      color: #fff;
+      text-shadow: 0 0 12px rgba(255, 255, 255, 0.4);
+    }
+
+    .hud-timeline-container {
+      flex: 1;
+      max-width: 260px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .timeline-bar {
+      width: 100%;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 99px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .timeline-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #38bdf8, #818cf8);
+      border-radius: 99px;
+      transition: width 0.1s linear;
+      box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+    }
+
+    .timeline-info {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      color: var(--text-muted);
+      font-family: 'Outfit', monospace;
+    }
+
+    .hud-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .icon-btn {
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--panel-border);
+      color: #fff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    /* Combo Container */
+    #hud-combo-container {
+      align-self: center;
+      margin-top: 15vh;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      pointer-events: none;
+    }
+
+    #hud-combo {
+      font-family: 'Outfit', sans-serif;
+      font-size: 48px;
+      font-weight: 900;
+      line-height: 1;
+      background: linear-gradient(135deg, #facc15, #f59e0b);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 16px rgba(250, 204, 21, 0.5));
+    }
+
+    .combo-sub {
+      font-family: 'Outfit', sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 3px;
+      color: #fde047;
+      text-transform: uppercase;
+    }
+
+    #hud-combo-container.pulse {
+      animation: comboPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    @keyframes comboPop {
+      0% { transform: scale(0.85); }
+      50% { transform: scale(1.25); }
+      100% { transform: scale(1.0); }
+    }
+
+    /* Floating Judgement Badges */
+    #judgement-layer {
+      position: fixed;
+      top: 48%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      z-index: 40;
+    }
+
+    .judgement-badge {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 900;
+      animation: floatJudgement 0.75s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+      white-space: nowrap;
+    }
+
+    @keyframes floatJudgement {
+      0% {
+        transform: translate(-50%, 20px) scale(0.6);
+        opacity: 0;
+      }
+      25% {
+        transform: translate(-50%, -10px) scale(1.15);
+        opacity: 1;
+      }
+      70% {
+        transform: translate(-50%, -35px) scale(1.0);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(-50%, -65px) scale(0.85);
+        opacity: 0;
+      }
+    }
+
+    .judgement-perfect .judgement-label {
+      font-size: 26px;
+      background: linear-gradient(135deg, #facc15, #fde047);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 12px rgba(250, 204, 21, 0.8));
+    }
+
+    .judgement-good .judgement-label {
+      font-size: 22px;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 12px rgba(56, 189, 248, 0.8));
+    }
+
+    .judgement-miss .judgement-label {
+      font-size: 20px;
+      color: #ef4444;
+      text-shadow: 0 0 12px rgba(239, 68, 68, 0.8);
+    }
+
+    .judgement-pts {
+      font-size: 14px;
+      color: #fff;
+      font-weight: 700;
+      opacity: 0.9;
+    }
+
+    /* Countdown Overlay */
+    #countdown-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 60;
+      pointer-events: none;
+    }
+
+    .countdown-num {
+      font-family: 'Outfit', sans-serif;
+      font-size: 110px;
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 0 35px rgba(99, 102, 241, 0.9), 0 0 60px rgba(56, 189, 248, 0.7);
+    }
+
+    .countdown-num.go {
+      color: #fde047;
+      text-shadow: 0 0 45px rgba(250, 204, 21, 0.9);
+    }
+
+    .pulse-zoom {
+      animation: pulseZoom 0.85s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+    }
+
+    @keyframes pulseZoom {
+      0% { transform: scale(0.3); opacity: 0; }
+      40% { transform: scale(1.2); opacity: 1; }
+      80% { transform: scale(1.0); opacity: 1; }
+      100% { transform: scale(0.8); opacity: 0; }
+    }
+
+    /* Modals (Song Selection, Calibration, Result) */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 7, 13, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 80;
+    }
+
+    .modal-box {
+      width: 100%;
+      max-width: 440px;
+      padding: 24px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 20px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .modal-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 99px;
+      background: rgba(99, 102, 241, 0.2);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      color: #a5b4fc;
+    }
+
+    /* Mode Selector Pills */
+    .mode-pills {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px;
+      border-radius: 14px;
+    }
+
+    .mode-pill {
+      padding: 10px 8px;
+      border-radius: 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-family: 'Outfit', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .mode-pill span {
+      font-size: 10px;
+      font-weight: 500;
+      opacity: 0.8;
+    }
+
+    .mode-pill.active {
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+    }
+
+    /* Song Selection List */
+    .song-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .song-item {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .song-item:hover, .song-item.selected {
+      background: rgba(99, 102, 241, 0.15);
+      border-color: rgba(99, 102, 241, 0.5);
+    }
+
+    .song-item-info h4 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .song-item-info p {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .song-item-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+    }
+
+    /* Calibration Overlay Frame */
+    .calib-guide-box {
+      width: 100%;
+      height: 180px;
+      border: 2px dashed #38bdf8;
+      border-radius: 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: rgba(56, 189, 248, 0.05);
+      box-shadow: inset 0 0 20px rgba(56, 189, 248, 0.15);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .calib-hand-icon {
+      font-size: 44px;
+      animation: pulseHand 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulseHand {
+      0%, 100% { transform: scale(1.0); opacity: 0.8; }
+      50% { transform: scale(1.1); opacity: 1.0; }
+    }
+
+    /* Result Modal Polish */
+    .result-rank-circle {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Outfit', sans-serif;
+      font-size: 42px;
+      font-weight: 900;
+      background: linear-gradient(135deg, #facc15, #f59e0b);
+      color: #000;
+      box-shadow: 0 0 30px rgba(250, 204, 21, 0.6);
+    }
+
+    .punchline-banner {
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(56, 189, 248, 0.2));
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 10px 14px;
+      border-radius: 12px;
+      text-align: center;
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: #e0f2fe;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-card {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-card .val {
+      font-family: 'Outfit', sans-serif;
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Three.js 3D Viewport Container -->
+  <div id="ar-container"></div>
+
+  <!-- Surface Scan / Placement Banner -->
+  <div id="scan-banner" class="glass-card">
+    <h2>Surface Detection Ready</h2>
+    <p id="scan-instructions">Aim your camera at a flat table or floor</p>
+    <div style="display: flex; gap: 8px; margin-top: 4px;">
+      <button id="btn-place-arena" class="action-btn">
+        <span>✨ Anchor Arena Here</span>
+      </button>
+      <button id="btn-skip-placement" class="action-btn secondary">
+        <span>Use Default Pose</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Song & Mode Select Modal -->
+  <div id="song-modal" class="modal-backdrop">
+    <div class="modal-box glass-card">
+      <div class="modal-header">
+        <h3 class="modal-title">AR Piano Arena</h3>
+        <span class="modal-badge">Web AR 3D</span>
+      </div>
+
+      <!-- Mode Selector -->
+      <div class="mode-pills">
+        <button id="btn-mode-1hand" class="mode-pill active">
+          1-Hand Mode
+          <span>4 Lanes (Melody)</span>
+        </button>
+        <button id="btn-mode-2hand" class="mode-pill">
+          2-Hands Mode
+          <span>8 Lanes (Bass + Melody)</span>
+        </button>
+      </div>
+
+      <!-- Song Selector -->
+      <div class="song-list">
+        <div class="song-item selected" data-song-id="demo_canon">
+          <div class="song-item-info">
+            <h4>Canon in D</h4>
+            <p>Johann Pachelbel • 100 BPM • Classical</p>
+          </div>
+          <span class="song-item-tag">Built-in</span>
+        </div>
+
+        <div class="song-item" data-song-id="demo_twinkle">
+          <div class="song-item-info">
+            <h4>Twinkle Twinkle Little Star</h4>
+            <p>Traditional • 100 BPM • Easy Chords</p>
+          </div>
+          <span class="song-item-tag">Built-in</span>
+        </div>
+      </div>
+
+      <!-- File Import Section -->
+      <label class="action-btn secondary" style="justify-content: center; width: 100%;">
+        <span>📂 Import JSON / MIDI File</span>
+        <input type="file" id="song-file-input" accept=".json,.mid,.midi" style="display: none;" />
+      </label>
+
+      <!-- Navigation & Start -->
+      <div style="display: flex; gap: 8px; margin-top: 6px;">
+        <a href="index.html" class="action-btn secondary" style="flex: 1; text-decoration: none; justify-content: center;">
+          ← 2D Player
+        </a>
+        <button id="btn-start-calibration" class="action-btn" style="flex: 2; justify-content: center;">
+          Start Calibration →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calibration Guide Modal -->
+  <div id="calib-modal" class="modal-backdrop hidden">
+    <div class="modal-box glass-card" style="text-align: center;">
+      <h3 class="modal-title">Hand Reach Calibration</h3>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Raise your hand in front of camera to auto-calibrate comfortable lane spacing and depth.
+      </p>
+
+      <div class="calib-guide-box">
+        <div class="calib-hand-icon">✋</div>
+        <p id="calib-status-text" style="font-size: 12px; color: #38bdf8; font-weight: 600;">
+          Hold hand steady inside frame... (0%)
+        </p>
+      </div>
+
+      <div class="timeline-bar" style="height: 8px; margin: 4px 0;">
+        <div id="calib-progress-bar" class="timeline-fill" style="width: 0%;"></div>
+      </div>
+
+      <div style="display: flex; gap: 8px;">
+        <button id="btn-skip-calib" class="action-btn secondary" style="flex: 1; justify-content: center;">
+          Skip (Default 0.8m)
+        </button>
+        <button id="btn-confirm-calib" class="action-btn" style="flex: 1; justify-content: center;">
+          Confirm & Play
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- In-game HUD Layer -->
+  <div id="hud-layer" class="hidden">
+    <div class="hud-top">
+      <div class="hud-score-card glass-card">
+        <span class="hud-label">Score</span>
+        <span id="hud-score" class="hud-score-value">0</span>
+      </div>
+
+      <div class="hud-timeline-container glass-card" style="padding: 8px 14px;">
+        <div class="timeline-info">
+          <span id="hud-song-title">Canon in D</span>
+          <span id="time-elapsed">0:00 / 0:00</span>
+        </div>
+        <div class="timeline-bar">
+          <div id="timeline-progress" class="timeline-fill"></div>
+        </div>
+      </div>
+
+      <div class="hud-actions">
+        <button id="btn-mute" class="icon-btn" title="Toggle Sound">🔊</button>
+        <button id="btn-exit" class="icon-btn" title="Exit to Menu">✕</button>
+      </div>
+    </div>
+
+    <!-- Center Combo Display -->
+    <div id="hud-combo-container" class="hidden">
+      <div id="hud-combo">0</div>
+      <div class="combo-sub">Combo</div>
+    </div>
+
+    <!-- Bottom Accuracy Pill -->
+    <div style="align-self: center; margin-bottom: 12px;">
+      <div class="glass-card" style="padding: 6px 14px; font-size: 12px; font-weight: 700;">
+        Accuracy: <span id="hud-accuracy" style="color: #38bdf8;">100.0%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Judgement Badges Container -->
+  <div id="judgement-layer"></div>
+
+  <!-- Countdown Overlay -->
+  <div id="countdown-overlay" class="hidden">
+    <div id="countdown-number" class="countdown-num">3</div>
+  </div>
+
+  <!-- Result Modal -->
+  <div id="result-modal" class="modal-backdrop hidden">
+    <div class="modal-box glass-card" style="text-align: center;">
+      <div id="result-rank" class="result-rank-circle">A</div>
+      <h3 class="modal-title" style="margin-top: 4px;">Performance Summary</h3>
+
+      <div id="result-punchline" class="punchline-banner">
+        You built 95% of the song in space!
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="hud-label">Final Score</span>
+          <span id="result-score" class="val">94,200</span>
+        </div>
+        <div class="stat-card">
+          <span class="hud-label">Accuracy</span>
+          <span id="result-accuracy" class="val">95.0%</span>
+        </div>
+        <div class="stat-card">
+          <span class="hud-label">Max Combo</span>
+          <span id="result-max-combo" class="val">48</span>
+        </div>
+        <div class="stat-card">
+          <span class="hud-label">Chord Acc</span>
+          <span id="result-chord-accuracy" class="val">100%</span>
+        </div>
+        <div class="stat-card">
+          <span class="hud-label">Perfect</span>
+          <span id="result-perfect" class="val" style="color: #facc15;">42</span>
+        </div>
+        <div class="stat-card">
+          <span class="hud-label">Good / Miss</span>
+          <span class="val">
+            <span id="result-good" style="color: #38bdf8;">6</span> /
+            <span id="result-miss" style="color: #ef4444;">2</span>
+          </span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 6px;">
+        <button id="btn-result-songs" class="action-btn secondary" style="flex: 1; justify-content: center;">
+          Select Song
+        </button>
+        <button id="btn-result-replay" class="action-btn" style="flex: 2; justify-content: center;">
+          Play Again ↺
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Logic Module -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+    import { ARScene } from './src/ar/arScene.js';
+    import { HandTracker } from './src/vision/handTracker.js';
+    import { HitDetector } from './src/engine/hitDetector.js';
+    import { SoundEngine } from './src/audio/soundEngine.js';
+    import { parseSongChart, convertTilesJsonToChart } from './src/engine/songParser.js';
+    import { ARUIController, UI_STATES } from './src/ui/arUI.js';
+
+    // Application state
+    let arScene = null;
+    let handTracker = null;
+    let hitDetector = null;
+    let soundEngine = null;
+    let arUI = null;
+
+    let selectedLanes = 4;
+    let selectedSongId = 'demo_canon';
+    let loadedSongData = null;
+    let currentChart = null;
+
+    let isPlaying = false;
+    let songStartTimeSec = 0;
+    let lastHandPositions = { Left: null, Right: null };
+    let fallbackInteractionActive = false;
+
+    // Preloaded canonical demo songs data fallback
+    const DEMO_SONGS = {
+      demo_canon: {
+        id: 'demo_canon',
+        title: 'Canon in D',
+        artist: 'Johann Pachelbel',
+        bpm: 100,
+        charts: {
+          '4lane': {
+            difficulty: 'normal',
+            lanes: 4,
+            notes: [
+              { beat: 0, lane: 0, hand: 'left', type: 'tap', note: 'D4', midi: 62, duration: 1 },
+              { beat: 1, lane: 3, hand: 'right', type: 'tap', note: 'F#5', midi: 78, duration: 1 },
+              { beat: 2, lane: 2, hand: 'right', type: 'tap', note: 'E5', midi: 76, duration: 1 },
+              { beat: 3, lane: 1, hand: 'left', type: 'tap', note: 'D5', midi: 74, duration: 1 },
+              { beat: 4, lane: 0, hand: 'left', type: 'chord', duration: 2, notes: [{ lane: 0, hand: 'left', note: 'A3', midi: 57 }, { lane: 2, hand: 'right', note: 'C#5', midi: 73 }] },
+              { beat: 6, lane: 1, hand: 'left', type: 'tap', note: 'B4', midi: 71, duration: 1 },
+              { beat: 7, lane: 2, hand: 'right', type: 'tap', note: 'C#5', midi: 73, duration: 1 },
+              { beat: 8, lane: 1, hand: 'left', type: 'chord', duration: 2, notes: [{ lane: 1, hand: 'left', note: 'B3', midi: 59 }, { lane: 3, hand: 'right', note: 'D5', midi: 74 }] },
+              { beat: 10, lane: 2, hand: 'right', type: 'tap', note: 'C#5', midi: 73, duration: 1 },
+              { beat: 11, lane: 1, hand: 'left', type: 'tap', note: 'B4', midi: 71, duration: 1 },
+              { beat: 12, lane: 0, hand: 'left', type: 'chord', duration: 2, notes: [{ lane: 0, hand: 'left', note: 'F#3', midi: 54 }, { lane: 2, hand: 'right', note: 'A4', midi: 69 }] },
+              { beat: 14, lane: 1, hand: 'left', type: 'tap', note: 'B4', midi: 71, duration: 1 },
+              { beat: 15, lane: 2, hand: 'right', type: 'tap', note: 'C#5', midi: 73, duration: 1 },
+              { beat: 16, lane: 0, hand: 'left', type: 'chord', duration: 2, notes: [{ lane: 0, hand: 'left', note: 'G3', midi: 55 }, { lane: 1, hand: 'right', note: 'B4', midi: 71 }] }
+            ]
+          },
+          '8lane': {
+            difficulty: 'hard',
+            lanes: 8,
+            notes: [
+              { beat: 0, lane: 1, hand: 'left', type: 'tap', note: 'D3', midi: 50, duration: 1 },
+              { beat: 0, lane: 5, hand: 'right', type: 'tap', note: 'F#4', midi: 66, duration: 1 },
+              { beat: 2, lane: 2, hand: 'left', type: 'tap', note: 'A2', midi: 45, duration: 1 },
+              { beat: 2, lane: 6, hand: 'right', type: 'tap', note: 'E4', midi: 64, duration: 1 },
+              { beat: 4, lane: 0, hand: 'left', type: 'tap', note: 'B2', midi: 47, duration: 1 },
+              { beat: 4, lane: 7, hand: 'right', type: 'tap', note: 'D5', midi: 74, duration: 1 },
+              { beat: 6, lane: 1, hand: 'left', type: 'tap', note: 'F#2', midi: 42, duration: 1 },
+              { beat: 6, lane: 4, hand: 'right', type: 'tap', note: 'C#4', midi: 61, duration: 1 },
+              { beat: 8, lane: 0, hand: 'left', type: 'tap', note: 'G2', midi: 43, duration: 1 },
+              { beat: 8, lane: 5, hand: 'right', type: 'tap', note: 'B4', midi: 71, duration: 1 }
+            ]
+          }
+        }
+      },
+      demo_twinkle: {
+        id: 'demo_twinkle',
+        title: 'Twinkle Twinkle Little Star',
+        artist: 'Traditional',
+        bpm: 100,
+        charts: {
+          '4lane': {
+            difficulty: 'easy',
+            lanes: 4,
+            notes: [
+              { beat: 0, lane: 0, hand: 'left', type: 'tap', note: 'C4', midi: 60, duration: 1 },
+              { beat: 1, lane: 0, hand: 'left', type: 'tap', note: 'C4', midi: 60, duration: 1 },
+              { beat: 2, lane: 2, hand: 'right', type: 'tap', note: 'G4', midi: 67, duration: 1 },
+              { beat: 3, lane: 2, hand: 'right', type: 'tap', note: 'G4', midi: 67, duration: 1 },
+              { beat: 4, lane: 3, hand: 'right', type: 'tap', note: 'A4', midi: 69, duration: 1 },
+              { beat: 5, lane: 3, hand: 'right', type: 'tap', note: 'A4', midi: 69, duration: 1 },
+              { beat: 6, lane: 2, hand: 'right', type: 'hold', note: 'G4', midi: 67, duration: 2 },
+              { beat: 8, lane: 1, hand: 'left', type: 'tap', note: 'F4', midi: 65, duration: 1 },
+              { beat: 9, lane: 1, hand: 'left', type: 'tap', note: 'F4', midi: 65, duration: 1 },
+              { beat: 10, lane: 1, hand: 'left', type: 'tap', note: 'E4', midi: 64, duration: 1 },
+              { beat: 11, lane: 1, hand: 'left', type: 'tap', note: 'E4', midi: 64, duration: 1 },
+              { beat: 12, lane: 0, hand: 'left', type: 'tap', note: 'D4', midi: 62, duration: 1 },
+              { beat: 13, lane: 0, hand: 'left', type: 'tap', note: 'D4', midi: 62, duration: 1 },
+              { beat: 14, lane: 0, hand: 'left', type: 'hold', note: 'C4', midi: 60, duration: 2 }
+            ]
+          },
+          '8lane': {
+            difficulty: 'normal',
+            lanes: 8,
+            notes: [
+              { beat: 0, lane: 0, hand: 'left', type: 'tap', note: 'C3', midi: 48, duration: 1 },
+              { beat: 0, lane: 4, hand: 'right', type: 'tap', note: 'C4', midi: 60, duration: 1 },
+              { beat: 2, lane: 1, hand: 'left', type: 'tap', note: 'G3', midi: 55, duration: 1 },
+              { beat: 2, lane: 6, hand: 'right', type: 'tap', note: 'G4', midi: 67, duration: 1 },
+              { beat: 4, lane: 2, hand: 'left', type: 'tap', note: 'A3', midi: 57, duration: 1 },
+              { beat: 4, lane: 7, hand: 'right', type: 'tap', note: 'A4', midi: 69, duration: 1 },
+              { beat: 6, lane: 1, hand: 'left', type: 'hold', note: 'G3', midi: 55, duration: 2 },
+              { beat: 6, lane: 6, hand: 'right', type: 'hold', note: 'G4', midi: 67, duration: 2 }
+            ]
+          }
+        }
+      }
+    };
+
+    async function init() {
+      const container = document.getElementById('ar-container');
+
+      // 1. Initialize ARUI Controller
+      arUI = new ARUIController({ container });
+
+      // 2. Initialize Three.js Scene
+      arScene = new ARScene({
+        container,
+        three: THREE,
+        laneCount: selectedLanes,
+        arenaWidth: 0.8,
+        arenaDepth: 2.0,
+        hitPlaneZ: 0.0,
+        travelDurationSec: 2.0
+      });
+
+      // 3. Initialize Hit Detector
+      hitDetector = new HitDetector({
+        laneCount: selectedLanes,
+        arenaWidth: 0.8,
+        hitPlaneZ: 0.0,
+        perfectWindowSec: 0.050,
+        goodWindowSec: 0.120,
+        forgiveness: 1.2
+      });
+
+      // 4. Initialize Sound Engine
+      soundEngine = new SoundEngine();
+
+      // 5. Initialize Hand Tracker (async)
+      handTracker = new HandTracker({
+        arenaConfig: { arenaWidth: 0.8, cameraZOffset: 0.0 }
+      });
+      handTracker.init().catch(err => console.warn('MediaPipe async load warning:', err));
+
+      // Attempt camera fallback right away for AR background
+      await arScene.initFallbackCamera(container);
+
+      // Check WebXR availability
+      if (navigator.xr && navigator.xr.isSessionSupported) {
+        const supported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+        if (supported) {
+          const btn = document.getElementById('btn-place-arena');
+          if (btn) btn.innerHTML = '<span>🥽 Start WebXR AR</span>';
+        }
+      }
+
+      setupDOMEventHandlers();
+      setupTouchLaneFallback();
+      startMainRenderLoop();
+    }
+
+    function setupDOMEventHandlers() {
+      // Surface Placement Handlers
+      const btnPlace = document.getElementById('btn-place-arena');
+      const btnSkip = document.getElementById('btn-skip-placement');
+
+      btnPlace?.addEventListener('click', async () => {
+        await soundEngine.init();
+        if (navigator.xr && navigator.xr.isSessionSupported) {
+          const supported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
+          if (supported && !arScene.xrSession) {
+            try {
+              const session = await navigator.xr.requestSession('immersive-ar', {
+                requiredFeatures: ['hit-test', 'local-floor']
+              });
+              await arScene.setupWebXRSession(session);
+            } catch (e) {
+              console.warn('WebXR requestSession fallback:', e);
+            }
+          }
+        }
+        arScene.confirmPlacement();
+        arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+      });
+
+      btnSkip?.addEventListener('click', async () => {
+        await soundEngine.init();
+        arScene.placeArena({ x: 0, y: -0.3, z: -1.2 });
+        arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+      });
+
+      // Mode Selector Pills
+      const pill1Hand = document.getElementById('btn-mode-1hand');
+      const pill2Hand = document.getElementById('btn-mode-2hand');
+
+      pill1Hand?.addEventListener('click', () => {
+        selectedLanes = 4;
+        pill1Hand.classList.add('active');
+        pill2Hand.classList.remove('active');
+        arScene.setLaneCount(4);
+        hitDetector.laneCount = 4;
+      });
+
+      pill2Hand?.addEventListener('click', () => {
+        selectedLanes = 8;
+        pill2Hand.classList.add('active');
+        pill1Hand.classList.remove('active');
+        arScene.setLaneCount(8);
+        hitDetector.laneCount = 8;
+      });
+
+      // Song Select Items
+      const songItems = document.querySelectorAll('.song-item');
+      songItems.forEach(item => {
+        item.addEventListener('click', () => {
+          songItems.forEach(si => si.classList.remove('selected'));
+          item.classList.add('selected');
+          selectedSongId = item.getAttribute('data-song-id');
+        });
+      });
+
+      // File input
+      const fileInput = document.getElementById('song-file-input');
+      fileInput?.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        try {
+          const text = await file.text();
+          const json = JSON.parse(text);
+          if (json.tiles) {
+            const converted = convertTilesJsonToChart(json);
+            loadedSongData = converted.song;
+            currentChart = parseSongChart(converted.song, converted.chart);
+          } else if (json.charts) {
+            loadedSongData = json;
+            const chartKey = selectedLanes === 8 ? '8lane' : '4lane';
+            const chartData = json.charts[chartKey] || Object.values(json.charts)[0];
+            currentChart = parseSongChart(json, chartData);
+          }
+          alert(`Imported: ${loadedSongData.title || file.name}`);
+        } catch (err) {
+          alert('Failed to parse file: ' + err.message);
+        }
+      });
+
+      // Start Calibration Button
+      const btnStartCalib = document.getElementById('btn-start-calibration');
+      btnStartCalib?.addEventListener('click', () => {
+        prepareSongChart();
+        arUI.calibrationManager.reset();
+        arUI.stateMachine.transition(UI_STATES.CALIBRATING);
+      });
+
+      // Calibration Confirm & Skip Buttons
+      const btnConfirmCalib = document.getElementById('btn-confirm-calib');
+      const btnSkipCalib = document.getElementById('btn-skip-calib');
+
+      const applyCalibrationAndStart = () => {
+        const calib = arUI.calibrationManager.computeCalibration();
+        hitDetector.arenaWidth = calib.arenaWidth;
+        hitDetector.hitPlaneZ = calib.hitPlaneZ;
+        arScene.arenaWidth = calib.arenaWidth;
+        arScene.hitPlaneZ = calib.hitPlaneZ;
+        arScene.setLaneCount(selectedLanes);
+
+        arUI.stateMachine.transition(UI_STATES.COUNTDOWN);
+        arUI.showCountdown(3, () => startSongGameplay());
+      };
+
+      btnConfirmCalib?.addEventListener('click', applyCalibrationAndStart);
+      btnSkipCalib?.addEventListener('click', applyCalibrationAndStart);
+
+      // HUD Buttons
+      document.getElementById('btn-mute')?.addEventListener('click', () => {
+        const muted = soundEngine.toggleMute();
+        document.getElementById('btn-mute').innerText = muted ? '🔇' : '🔊';
+      });
+
+      document.getElementById('btn-exit')?.addEventListener('click', () => {
+        isPlaying = false;
+        arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+      });
+
+      // Result Modal Buttons
+      document.getElementById('btn-result-replay')?.addEventListener('click', () => {
+        prepareSongChart();
+        arUI.stateMachine.transition(UI_STATES.COUNTDOWN);
+        arUI.showCountdown(3, () => startSongGameplay());
+      });
+
+      document.getElementById('btn-result-songs')?.addEventListener('click', () => {
+        arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+      });
+    }
+
+    async function prepareSongChart() {
+      let songData = loadedSongData || DEMO_SONGS[selectedSongId] || DEMO_SONGS.demo_canon;
+      const chartKey = selectedLanes === 8 ? '8lane' : '4lane';
+      const chartData = songData.charts ? (songData.charts[chartKey] || Object.values(songData.charts)[0]) : { lanes: selectedLanes, notes: [] };
+
+      currentChart = parseSongChart(songData, chartData);
+
+      const titleEl = document.getElementById('hud-song-title');
+      if (titleEl) titleEl.innerText = currentChart.title;
+    }
+
+    function startSongGameplay() {
+      if (!currentChart) prepareSongChart();
+      arUI.scoreManager.reset();
+      arUI.updateScore(0, 0, 100);
+
+      // Reset notes state
+      for (const note of currentChart.notes) {
+        note.spawned = false;
+        note.played = false;
+        note.missed = false;
+      }
+
+      songStartTimeSec = performance.now() / 1000;
+      isPlaying = true;
+      arUI.stateMachine.transition(UI_STATES.PLAYING);
+    }
+
+    function setupTouchLaneFallback() {
+      // Tap on screen fallback: raycasts or maps screen touch X to lane index
+      const container = document.getElementById('ar-container');
+      container?.addEventListener('pointerdown', (e) => {
+        if (!isPlaying || !currentChart) return;
+        const rect = container.getBoundingClientRect();
+        const normX = (e.clientX - rect.left) / rect.width;
+        const lane = Math.floor(normX * selectedLanes);
+
+        const currentTimeSec = (performance.now() / 1000) - songStartTimeSec;
+        const mockPrev = { x: (normX - 0.5) * hitDetector.arenaWidth, y: 0, z: -0.05 };
+        const mockCurr = { x: (normX - 0.5) * hitDetector.arenaWidth, y: 0, z: 0.05 };
+
+        handleHitEvaluation(mockPrev, mockCurr, currentTimeSec);
+      });
+    }
+
+    function handleHitEvaluation(prevPos, currPos, currentTimeSec) {
+      const hit = hitDetector.evaluateCrossingHit(prevPos, currPos, currentTimeSec, currentChart.notes);
+      if (hit) {
+        soundEngine.playNote(hit.note.note, hit.note.durationSec);
+        soundEngine.playFeedback(hit.judgement);
+
+        const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
+        arUI.showJudgement(hit.judgement, scoreRes.points);
+        arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
+
+        arScene.triggerHitVFX(hit.lane, hit.judgement);
+        arScene.worldReaction.setCombo(arUI.scoreManager.combo);
+      }
+    }
+
+    function startMainRenderLoop() {
+      let lastTime = performance.now();
+
+      const onFrame = (timestamp, xrFrame) => {
+        const dt = Math.min(0.1, (timestamp - lastTime) / 1000);
+        lastTime = timestamp;
+
+        const currentState = arUI.stateMachine.getState();
+
+        // 1. Vision Hand Tracking
+        if (handTracker && arScene.videoElement) {
+          const hands = handTracker.detectForVideo(arScene.videoElement, timestamp);
+          arScene.updateFingertips(hands);
+
+          // In Calibration state, accumulate samples
+          if (currentState === UI_STATES.CALIBRATING && hands.length > 0) {
+            for (const h of hands) {
+              arUI.calibrationManager.addSample(h.indexTip);
+            }
+            const prog = arUI.calibrationManager.getProgress();
+            arUI.updateCalibrationProgress(prog, arUI.calibrationManager.getSampleCount());
+            if (prog >= 1.0) {
+              const btnConfirm = document.getElementById('btn-confirm-calib');
+              if (btnConfirm) btnConfirm.classList.add('pulse');
+            }
+          }
+
+          // In Playing state, evaluate hand crossings
+          if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
+            const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
+
+            for (const h of hands) {
+              const prev = lastHandPositions[h.handedness] || h.indexTip;
+              handleHitEvaluation(prev, h.indexTip, currentTimeSec);
+              lastHandPositions[h.handedness] = { ...h.indexTip };
+            }
+          }
+        }
+
+        // 2. Gameplay state updates
+        if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
+          const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
+
+          // Check for missed notes
+          const missedNotes = hitDetector.checkMissedNotes(currentTimeSec, currentChart.notes);
+          for (const m of missedNotes) {
+            arUI.scoreManager.recordHit('MISS');
+            arUI.showJudgement('MISS', 0);
+            arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
+            arScene.worldReaction.setCombo(0);
+          }
+
+          // Spawn notes & update scene
+          arScene.spawnNotes(currentChart.notes, currentTimeSec);
+          arUI.updateTimeline(currentTimeSec, currentChart.durationSec);
+
+          // Check for song completion
+          if (currentTimeSec >= currentChart.durationSec + 0.8) {
+            isPlaying = false;
+            arUI.showResult(arUI.scoreManager.getSummary());
+          }
+        }
+
+        // 3. Render 3D Scene
+        const sceneTimeSec = (timestamp / 1000) - songStartTimeSec;
+        arScene.update(sceneTimeSec, dt, xrFrame);
+
+        if (arScene.renderer && arScene.scene && arScene.camera) {
+          arScene.renderer.render(arScene.scene, arScene.camera);
+        }
+
+        // Keep loop ticking (Three.js WebXR handles XR frames automatically when active)
+        if (!arScene.xrSession) {
+          requestAnimationFrame(onFrame);
+        }
+      };
+
+      if (arScene.renderer?.xr) {
+        arScene.renderer.setAnimationLoop(onFrame);
+      } else {
+        requestAnimationFrame(onFrame);
+      }
+    }
+
+    // Auto-bootstrap on load
+    window.addEventListener('DOMContentLoaded', () => {
+      init().catch(err => console.error('AR initialization error:', err));
+    });
+  </script>
+</body>
+</html>
