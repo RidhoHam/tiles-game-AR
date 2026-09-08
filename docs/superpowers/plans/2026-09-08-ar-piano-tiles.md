@@ -435,9 +435,9 @@ git commit -m "feat: implement MediaPipe hand tracking with 2-hand support and E
   * World reactive environmental pulse (glow intensity responds to combo streaks 10, 20, 40, 60).
   * WebXR hit-test placement reticle and Camera+Raycaster fallback for non-WebXR devices.
 
-- [ ] **Step 1: Implement `src/ar/vfxSystem.js`**
-- [ ] **Step 2: Implement `src/ar/arScene.js`**
-- [ ] **Step 3: Commit**
+- [x] **Step 1: Implement `src/ar/vfxSystem.js`**
+- [x] **Step 2: Implement `src/ar/arScene.js`**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/ar/vfxSystem.js src/ar/arScene.js
