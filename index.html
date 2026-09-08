@@ -1,0 +1,3071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AR Piano Tiles — MIDI to Tile Preview & Player</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎹</text></svg>">
+<style>
+  :root {
+    --bg-main: #0b0d14;
+    --bg-header: #111521;
+    --bg-card: rgba(15, 18, 29, 0.88);
+    --border-color: #252b3a;
+    --border-active: #485474;
+    --primary: #6366f1;
+    --primary-glow: rgba(99, 102, 241, 0.35);
+    --accent: #38bdf8;
+    --text: #f5f7ff;
+    --text-muted: #8992a8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg-main);
+    color: var(--text);
+    font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  #app { height: 100vh; display: flex; flex-direction: column; }
+  
+  /* Header & Controls */
+  header {
+    height: 64px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 16px;
+    background: var(--bg-header);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 10;
+  }
+  .brand {
+    display: flex;
+    flex-direction: column;
+    margin-right: 4px;
+  }
+  .brand h1 {
+    font-size: 16px;
+    font-weight: 700;
+    margin: 0;
+    white-space: nowrap;
+    background: linear-gradient(135deg, #a5b4fc, #38bdf8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .sub { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+
+  .controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  button, .file-btn, select {
+    border: 1px solid #30384b;
+    background: #181e2b;
+    color: #fff;
+    border-radius: 8px;
+    padding: 7px 11px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  button:hover:not(:disabled), .file-btn:hover {
+    background: #222a3b;
+    border-color: #434e68;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  button.primary {
+    background: linear-gradient(135deg, #4f46e5, #6366f1);
+    border-color: #6366f1;
+    color: #ffffff;
+    box-shadow: 0 2px 8px var(--primary-glow);
+  }
+  button.primary:hover:not(:disabled) {
+    background: linear-gradient(135deg, #4338ca, #4f46e5);
+  }
+  /* Dual Mode Switcher Tabs */
+  .view-mode-tabs {
+    display: inline-flex;
+    align-items: center;
+    background: #0d111b;
+    padding: 3px;
+    border-radius: 9px;
+    border: 1px solid #283144;
+    gap: 3px;
+    margin-right: 6px;
+  }
+  .view-tab {
+    padding: 5px 12px;
+    font-size: 11.5px;
+    font-weight: 600;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.16s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .view-tab:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.06);
+  }
+  .view-tab.active {
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: #ffffff;
+    border-color: #60a5fa;
+    box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+  }
+
+  .control-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 0 4px;
+  }
+  input[type="range"] {
+    accent-color: #6366f1;
+    cursor: pointer;
+  }
+  .speed-range { width: 68px; }
+  .vol-range { width: 55px; }
+
+  /* Timeline Progress Bar */
+  #timeline {
+    height: 6px;
+    background: #1a2030;
+    cursor: pointer;
+    position: relative;
+    z-index: 9;
+  }
+  #timeline-progress {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #6366f1, #38bdf8);
+    position: relative;
+  }
+  #timeline-handle {
+    position: absolute;
+    right: -4px;
+    top: -3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px rgba(0,0,0,0.5);
+    display: none;
+  }
+  #timeline:hover #timeline-handle { display: block; }
+
+  /* Stage & Canvas */
+  #stage {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 50% 18%, rgba(99, 102, 241, 0.12), transparent 45%),
+      linear-gradient(180deg, #0e1220 0%, #080a10 100%);
+  }
+  canvas { width: 100%; height: 100%; display: block; }
+
+  /* HUD */
+  #hud {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    right: 16px;
+    display: flex;
+    justify-content: space-between;
+    pointer-events: none;
+  }
+  .hud-left, .hud-right {
+    display: flex;
+    gap: 10px;
+  }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(10px);
+    border-radius: 10px;
+    padding: 7px 12px;
+    min-width: 80px;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+  }
+  .card.score-card {
+    border-color: rgba(56, 189, 248, 0.4);
+    background: rgba(14, 28, 48, 0.85);
+  }
+  .label { color: #7e879c; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; }
+  .value { font-size: 14px; font-weight: 600; margin-top: 2px; color: #fff; }
+
+  /* Realistic Piano Keyboard Bed */
+  #lane-keys {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 94px;
+    display: flex;
+    padding: 0 4px 6px;
+    background: linear-gradient(180deg, #181d28 0%, #0d111a 100%);
+    border-top: 2px solid #2d3748;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+    z-index: 8;
+    pointer-events: auto;
+  }
+  .lane-key {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    position: relative;
+    padding: 0 2px;
+  }
+  .piano-key {
+    width: 100%;
+    height: 84px;
+    border-radius: 0 0 6px 6px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 2px 6px;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.06s ease, background 0.08s ease, box-shadow 0.08s ease;
+    box-sizing: border-box;
+  }
+
+  /* Ivory / White Piano Key */
+  .piano-key.piano-white-key {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 45%, #e2e8f0 82%, #cbd5e1 100%);
+    border: 1px solid #94a3b8;
+    border-top: none;
+    border-bottom: 5px solid #64748b;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4), inset 0 -2px 3px rgba(0,0,0,0.08), inset 1px 0 0 #fff;
+    color: #0f172a;
+  }
+  .piano-key.piano-white-key:hover {
+    background: linear-gradient(180deg, #ffffff 0%, #f1f5f9 50%, #e2e8f0 100%);
+  }
+  .piano-key.piano-white-key.active {
+    background: linear-gradient(180deg, #bae6fd 0%, #38bdf8 55%, #0284c7 100%);
+    border-bottom: 2px solid #0369a1;
+    transform: translateY(3px);
+    box-shadow: 0 0 16px rgba(56, 189, 248, 0.85);
+    color: #082f49;
+  }
+
+  /* Ebony / Black Piano Key */
+  .piano-key.piano-black-key {
+    background: linear-gradient(180deg, #334155 0%, #1e293b 30%, #0f172a 82%, #020617 100%);
+    border: 1px solid #475569;
+    border-top: none;
+    border-bottom: 5px solid #000000;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255,255,255,0.25);
+    color: #f8fafc;
+  }
+  .piano-key.piano-black-key:hover {
+    background: linear-gradient(180deg, #475569 0%, #334155 35%, #1e293b 100%);
+  }
+  .piano-key.piano-black-key.active {
+    background: linear-gradient(180deg, #0284c7 0%, #0369a1 60%, #075985 100%);
+    border-bottom: 2px solid #0c4a6e;
+    transform: translateY(3px);
+    box-shadow: 0 0 18px rgba(56, 189, 248, 0.95);
+    color: #ffffff;
+  }
+
+  .piano-key-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    pointer-events: none;
+    margin-top: auto;
+  }
+  .piano-key-char {
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .piano-key-note {
+    font-size: 9px;
+    font-weight: 600;
+    opacity: 0.65;
+    letter-spacing: 0.02em;
+  }
+
+  /* Mute button on top of each piano key */
+  .piano-key .lane-mute-btn {
+    pointer-events: auto;
+    font-size: 8px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    line-height: 1;
+    transition: all 0.12s ease;
+    border: 1px solid transparent;
+  }
+  .piano-key.piano-white-key .lane-mute-btn {
+    background: rgba(226, 232, 240, 0.7);
+    color: #334155;
+    border-color: #cbd5e1;
+  }
+  .piano-key.piano-black-key .lane-mute-btn {
+    background: rgba(30, 41, 59, 0.7);
+    color: #94a3b8;
+    border-color: #475569;
+  }
+  .piano-key .lane-mute-btn.muted {
+    background: rgba(239, 68, 68, 0.3) !important;
+    border-color: #ef4444 !important;
+    color: #fca5a5 !important;
+    box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  }
+  .piano-key.lane-muted {
+    border-color: rgba(239, 68, 68, 0.65);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+  }
+  .piano-key.waiting-key {
+    background: linear-gradient(180deg, #fef08a 0%, #facc15 55%, #eab308 100%) !important;
+    border-color: #ca8a04 !important;
+    color: #422006 !important;
+    box-shadow: 0 0 20px rgba(250, 204, 21, 0.95), inset 0 1px 0 #fff !important;
+    animation: keyPulse 0.5s infinite alternate ease-in-out;
+  }
+  @keyframes keyPulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.05) translateY(-2px); }
+  }
+
+  /* Drag Drop & Status */
+  #drop {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+  }
+  #drop .message {
+    text-align: center;
+    color: #737f9e;
+    max-width: 460px;
+    line-height: 1.6;
+    background: rgba(13, 17, 28, 0.85);
+    border: 1px dashed #303b55;
+    padding: 26px;
+    border-radius: 16px;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+  }
+  #drop strong { color: #e2e8f0; font-size: 16px; display: block; margin-bottom: 8px; }
+
+  #status {
+    position: absolute;
+    left: 50%;
+    bottom: 104px;
+    transform: translateX(-50%);
+    color: #8993a8;
+    font-size: 12px;
+    background: rgba(10, 12, 18, 0.88);
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(8px);
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 6;
+  }
+
+  /* Floating Hit Judge */
+  .floating-judge {
+    position: absolute;
+    font-weight: 800;
+    font-size: 18px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    animation: floatUp 0.6s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0% { opacity: 1; transform: translate(-50%, 0) scale(0.8); }
+    50% { transform: translate(-50%, -18px) scale(1.15); }
+    100% { opacity: 0; transform: translate(-50%, -36px) scale(1); }
+  }
+  .judge-perfect { color: #facc15; text-shadow: 0 0 10px rgba(250, 204, 21, 0.8); }
+  .judge-great { color: #38bdf8; text-shadow: 0 0 10px rgba(56, 189, 248, 0.8); }
+  .judge-miss { color: #f43f5e; text-shadow: 0 0 10px rgba(244, 63, 94, 0.8); }
+  .judge-chord {
+    color: #fbbf24;
+    font-size: 22px;
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 16px rgba(245, 158, 11, 0.95), 0 0 30px rgba(251, 191, 36, 0.7);
+  }
+  .judge-megachord {
+    color: #f43f5e;
+    font-size: 25px;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 20px rgba(244, 63, 94, 0.95), 0 0 38px rgba(251, 113, 133, 0.8);
+  }
+  #chord-hint {
+    position: absolute;
+    bottom: 104px;
+    right: 16px;
+    background: rgba(22, 28, 44, 0.9);
+    border: 1px solid rgba(251, 191, 36, 0.45);
+    color: #fef08a;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    pointer-events: none;
+    z-index: 6;
+  }
+  .chord-slam-hud-btn {
+    pointer-events: auto;
+    background: linear-gradient(135deg, #d97706, #f59e0b);
+    border: 1px solid #fbbf24;
+    color: #ffffff;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(245, 158, 11, 0.45);
+    transition: all 0.12s ease;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .chord-slam-hud-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.7);
+    background: linear-gradient(135deg, #b45309, #d97706);
+  }
+  .chord-slam-hud-btn:active {
+    transform: translateY(1px);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <h1>AR Piano Tiles</h1>
+      <div class="sub">MIDI to Falling Tiles Player</div>
+    </div>
+
+    <!-- Dual Mode Switcher Tabs -->
+    <div class="view-mode-tabs" id="viewModeTabs">
+      <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Piano Tiles (Rhythm lanes)">🎮 Tiles</button>
+      <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano Roll (Tuts piano asli & falling notes Synthesia)">🎹 Real Piano</button>
+    </div>
+
+    <div class="controls">
+      <label class="file-btn">
+        📂 Open MIDI
+        <input id="midiFile" type="file" accept=".mid,.midi,audio/midi" />
+      </label>
+      <button id="demoBtn">🎵 Demo</button>
+      <button id="playBtn" class="primary" disabled>▶ Play</button>
+      <button id="resetBtn" disabled>↺ Reset</button>
+
+      <span class="control-group">
+        Mode
+        <select id="gameMode" title="Pilih mode: Auto-Play, Interaktif biasa, atau Stop Chord (lagu berhenti di setiap akor sampai ditekan)">
+          <option value="auto">Auto-Play</option>
+          <option value="play">Interactive</option>
+          <option value="wait_chord" selected>⏸️ Stop Chord (Wait)</option>
+          <option value="wait_all">⏸️ Stop All Notes (Wait)</option>
+        </select>
+      </span>
+
+      <!-- Mode 1 (Tiles): Lanes Selection -->
+      <span class="control-group" id="lanesControlGroup">
+        Lanes
+        <select id="lanes">
+          <option value="4">4 lanes</option>
+          <option value="6">6 lanes</option>
+          <option value="8" selected>8 lanes</option>
+          <option value="12">12 lanes</option>
+        </select>
+      </span>
+
+      <!-- Mode 1 (Tiles): Tile Width Selection -->
+      <span class="control-group" id="tileWidthControlGroup">
+        Tile
+        <select id="tileWidthSelect" title="Pilih lebar tile: Ramping (Slim), Sangat Ramping, Sedang, atau Penuh">
+          <option value="slim" selected>Ramping (Slim)</option>
+          <option value="compact">Sangat Ramping</option>
+          <option value="medium">Sedang</option>
+          <option value="full">Penuh (Full)</option>
+        </select>
+      </span>
+
+      <!-- Mode 2 (Roll): Piano Range Selection -->
+      <span class="control-group" id="pianoRangeControlGroup" style="display: none;">
+        Keyboard
+        <select id="pianoRangeSelect" title="Pilih rentang tuts piano: Sesuai Lagu (Auto-Fit), 88 Keys Lengkap, atau 61 Keys">
+          <option value="auto" selected>🎵 Sesuai Lagu (Auto)</option>
+          <option value="88">🎹 Full 88 Keys</option>
+          <option value="61">🎼 61 Keys (C2-C7)</option>
+          <option value="49">🎶 49 Keys (C3-C7)</option>
+        </select>
+      </span>
+
+      <span class="control-group">
+        Speed
+        <input id="speed" class="speed-range" type="range" min="0.25" max="2.5" value="1.0" step="0.05" />
+        <b id="speedValue" style="min-width: 38px;">1.00×</b>
+      </span>
+
+      <span class="control-group">
+        Auto MIDI
+        <select id="autoMutePreset" title="Pilih jalur mana yang di-mute dari suara otomatis agar hanya tuts ketikan Anda yang bersuara">
+          <option value="none" selected>Auto All</option>
+          <option value="right">Mute Right/Melody</option>
+          <option value="left">Mute Left/Bass</option>
+          <option value="all">Mute All (Tuts Only)</option>
+        </select>
+      </span>
+
+      <span class="control-group">
+        Sound
+        <select id="soundType">
+          <option value="strudel" selected>🎹 Strudel Grand (Studio Samples)</option>
+          <option value="piano">✨ Acoustic Synth</option>
+          <option value="bright">⚡ Bright Rhodes</option>
+          <option value="synth">🔔 Synth Bell</option>
+        </select>
+        <button id="soundBtn" title="Toggle Sound" style="padding: 7px 9px;">🔊</button>
+        <input id="volume" class="vol-range" type="range" min="0" max="1" value="0.75" step="0.05" />
+      </span>
+
+      <button id="exportBtn" title="Export Tile Chart as JSON" disabled>📥 Export JSON</button>
+    </div>
+  </header>
+
+  <!-- Interactive Timeline Progress Bar -->
+  <div id="timeline">
+    <div id="timeline-progress">
+      <div id="timeline-handle"></div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+
+    <!-- Heads Up Display -->
+    <div id="hud">
+      <div class="hud-left">
+        <div class="card"><div class="label">Song</div><div class="value" id="songName">—</div></div>
+        <div class="card"><div class="label">BPM</div><div class="value" id="bpm">—</div></div>
+        <div class="card"><div class="label">Tiles</div><div class="value" id="noteCount">—</div></div>
+        <div class="card"><div class="label">Time</div><div class="value" id="time">0:00 / 0:00</div></div>
+      </div>
+      <div class="hud-right" id="gameHud" style="display: none;">
+        <button id="chordSlamBtn" class="chord-slam-hud-btn" title="Tekan Spacebar / Enter atau klik tombol ini untuk memukul semua not chord bersamaan (4-8 lanes)!">⚡ SLAM CHORD [Space]</button>
+        <div class="card score-card"><div class="label">Score</div><div class="value" id="scoreVal">0</div></div>
+        <div class="card score-card"><div class="label">Combo</div><div class="value" id="comboVal">0</div></div>
+      </div>
+    </div>
+
+    <!-- Key badges shown over lanes -->
+    <div id="lane-keys"></div>
+
+    <!-- Drag & Drop overlay -->
+    <div id="drop">
+      <div class="message">
+        <strong>Pilih atau Drag & Drop File MIDI Di Sini</strong>
+        File MIDI akan otomatis di-parse langsung di browser.<br>
+        Not-not musik dikonversi menjadi falling tiles dengan audio synthesizer.<br><br>
+        <button id="dropDemoBtn" class="primary">▶ Putar Demo Lagu (Canon in D)</button>
+      </div>
+    </div>
+
+    <div id="status">Silakan pilih file MIDI atau klik Demo…</div>
+    <div id="chord-hint" style="display: none;">⚡ <b>Spacebar / Enter / Hit Line</b>: CHORD SLAM (4-8 Lanes)</div>
+  </div>
+</div>
+
+<!-- Tone.js MIDI Library for full-spec SMF parsing -->
+<script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+
+<script>
+(() => {
+  // DOM Elements
+  const fileInput = document.getElementById('midiFile');
+  const demoBtn = document.getElementById('demoBtn');
+  const dropDemoBtn = document.getElementById('dropDemoBtn');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const playBtn = document.getElementById('playBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const speedInput = document.getElementById('speed');
+  const speedValue = document.getElementById('speedValue');
+  const lanesSelect = document.getElementById('lanes');
+  const tileWidthSelect = document.getElementById('tileWidthSelect');
+  const gameModeSelect = document.getElementById('gameMode');
+  const autoMutePresetSelect = document.getElementById('autoMutePreset');
+  const soundTypeSelect = document.getElementById('soundType');
+  const soundBtn = document.getElementById('soundBtn');
+  const volumeInput = document.getElementById('volume');
+  const exportBtn = document.getElementById('exportBtn');
+  const timeline = document.getElementById('timeline');
+  const timelineProgress = document.getElementById('timeline-progress');
+
+  const songName = document.getElementById('songName');
+  const bpmEl = document.getElementById('bpm');
+  const noteCountEl = document.getElementById('noteCount');
+  const timeEl = document.getElementById('time');
+  const statusEl = document.getElementById('status');
+  const drop = document.getElementById('drop');
+  const gameHud = document.getElementById('gameHud');
+  const scoreVal = document.getElementById('scoreVal');
+  const comboVal = document.getElementById('comboVal');
+  const chordSlamBtn = document.getElementById('chordSlamBtn');
+  const chordHintEl = document.getElementById('chord-hint');
+  const laneKeysContainer = document.getElementById('lane-keys');
+
+  // Mode Switcher & Controls
+  const viewTilesBtn = document.getElementById('viewTilesBtn');
+  const viewRollBtn = document.getElementById('viewRollBtn');
+  const lanesControlGroup = document.getElementById('lanesControlGroup');
+  const tileWidthControlGroup = document.getElementById('tileWidthControlGroup');
+  const pianoRangeControlGroup = document.getElementById('pianoRangeControlGroup');
+  const pianoRangeSelect = document.getElementById('pianoRangeSelect');
+
+  // Note Helpers
+  const NOTE_NAMES_ALL = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function midiToNoteName(midi) {
+    return `${NOTE_NAMES_ALL[midi % 12]}${Math.floor(midi / 12) - 1}`;
+  }
+  function isBlackKeyMidi(midi) {
+    return [1, 3, 6, 8, 10].includes(midi % 12);
+  }
+
+  // Audio Context & Polyphonic Synth
+  let audioCtx = null;
+  let masterGain = null;
+  let masterCompressor = null;
+  let soundEnabled = true;
+  let currentVolume = 0.75;
+  let soundType = 'strudel'; // 'strudel' | 'piano' | 'bright' | 'synth'
+
+  function initAudio() {
+    if (!audioCtx) {
+      const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtxClass) {
+        audioCtx = new AudioCtxClass();
+        masterGain = audioCtx.createGain();
+        masterGain.gain.setValueAtTime(soundEnabled ? currentVolume : 0, audioCtx.currentTime);
+
+        // Studio Dynamics Compressor: Gives rich punch, boosts quiet/low bass notes, prevents distortion
+        masterCompressor = audioCtx.createDynamicsCompressor();
+        masterCompressor.threshold.setValueAtTime(-16, audioCtx.currentTime);
+        masterCompressor.knee.setValueAtTime(24, audioCtx.currentTime);
+        masterCompressor.ratio.setValueAtTime(4.0, audioCtx.currentTime);
+        masterCompressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+        masterCompressor.release.setValueAtTime(0.20, audioCtx.currentTime);
+
+        masterGain.connect(masterCompressor);
+        masterCompressor.connect(audioCtx.destination);
+
+        // Preload standard anchor octaves for instant grand piano response
+        [24, 36, 48, 60, 72, 84].forEach(m => loadStrudelSample(getNearestSample(m)));
+      }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+  }
+
+  function midiToFreq(midi) {
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  }
+
+  // Strudel.cc Official Concert Grand Piano Soundbank (Felix Roos / Dough-Samples)
+  const STRUDEL_PIANO_BASE = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/piano/';
+  const STRUDEL_PIANO_MAP = [
+    { note: 'A0', midi: 21, file: 'A0v8.mp3' },
+    { note: 'C1', midi: 24, file: 'C1v8.mp3' },
+    { note: 'Ds1', midi: 27, file: 'Ds1v8.mp3' },
+    { note: 'Fs1', midi: 30, file: 'Fs1v8.mp3' },
+    { note: 'A1', midi: 33, file: 'A1v8.mp3' },
+    { note: 'C2', midi: 36, file: 'C2v8.mp3' },
+    { note: 'Ds2', midi: 39, file: 'Ds2v8.mp3' },
+    { note: 'Fs2', midi: 42, file: 'Fs2v8.mp3' },
+    { note: 'A2', midi: 45, file: 'A2v8.mp3' },
+    { note: 'C3', midi: 48, file: 'C3v8.mp3' },
+    { note: 'Ds3', midi: 51, file: 'Ds3v8.mp3' },
+    { note: 'Fs3', midi: 54, file: 'Fs3v8.mp3' },
+    { note: 'A3', midi: 57, file: 'A3v8.mp3' },
+    { note: 'C4', midi: 60, file: 'C4v8.mp3' },
+    { note: 'Ds4', midi: 63, file: 'Ds4v8.mp3' },
+    { note: 'Fs4', midi: 66, file: 'Fs4v8.mp3' },
+    { note: 'A4', midi: 69, file: 'A4v8.mp3' },
+    { note: 'C5', midi: 72, file: 'C5v8.mp3' },
+    { note: 'Fs5', midi: 78, file: 'Fs5v8.mp3' },
+    { note: 'A5', midi: 81, file: 'A5v8.mp3' },
+    { note: 'C6', midi: 84, file: 'C6v8.mp3' },
+    { note: 'Ds6', midi: 87, file: 'Ds6v8.mp3' },
+    { note: 'Fs6', midi: 90, file: 'Fs6v8.mp3' },
+    { note: 'A6', midi: 93, file: 'A6v8.mp3' },
+    { note: 'C7', midi: 96, file: 'C7v8.mp3' },
+    { note: 'Ds7', midi: 99, file: 'Ds7v8.mp3' },
+    { note: 'Fs7', midi: 102, file: 'Fs7v8.mp3' },
+    { note: 'A7', midi: 105, file: 'A7v8.mp3' },
+    { note: 'C8', midi: 108, file: 'C8v8.mp3' }
+  ];
+
+  const sampleCache = new Map();
+  const sampleLoading = new Set();
+
+  function getNearestSample(midi) {
+    let best = STRUDEL_PIANO_MAP[0];
+    let minDiff = Math.abs(midi - best.midi);
+    for (let i = 1; i < STRUDEL_PIANO_MAP.length; i++) {
+      const item = STRUDEL_PIANO_MAP[i];
+      const diff = Math.abs(midi - item.midi);
+      if (diff < minDiff) {
+        minDiff = diff;
+        best = item;
+      }
+    }
+    return best;
+  }
+
+  async function loadStrudelSample(sample) {
+    if (sampleCache.has(sample.file)) return sampleCache.get(sample.file);
+    if (sampleLoading.has(sample.file)) return null;
+    sampleLoading.add(sample.file);
+    try {
+      const res = await fetch(STRUDEL_PIANO_BASE + sample.file);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const buf = await res.arrayBuffer();
+      if (!audioCtx) initAudio();
+      const audioBuf = await audioCtx.decodeAudioData(buf);
+      sampleCache.set(sample.file, audioBuf);
+      sampleLoading.delete(sample.file);
+      return audioBuf;
+    } catch (e) {
+      sampleLoading.delete(sample.file);
+      return null;
+    }
+  }
+
+  function preloadSongSamples() {
+    initAudio();
+    const needed = new Set();
+    for (const n of rawNotes) {
+      needed.add(getNearestSample(n.midi));
+    }
+    for (const s of needed) {
+      loadStrudelSample(s);
+    }
+  }
+
+  function playStrudelSample(midi, duration = 0.3, velocity = 0.8) {
+    const sample = getNearestSample(midi);
+    const audioBuf = sampleCache.get(sample.file);
+
+    if (!audioBuf) {
+      loadStrudelSample(sample);
+      playSynthNote(midi, duration, velocity);
+      return;
+    }
+
+    try {
+      const now = audioCtx.currentTime;
+      const semitoneOffset = midi - sample.midi;
+      const rate = Math.pow(2, semitoneOffset / 12);
+      const vel = Math.max(0.1, Math.min(1.0, velocity));
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuf;
+      source.playbackRate.setValueAtTime(rate, now);
+
+      const noteGain = audioCtx.createGain();
+
+      // Acoustic presence & equal loudness for deep grand piano bass
+      const isBass = midi < 56;
+      const bassBoost = isBass ? (1.0 + (56 - midi) * 0.03) : 1.0;
+      const peak = Math.min(1.2, vel * 1.05 * bassBoost);
+
+      const sustainDur = Math.max(0.45, duration);
+      noteGain.gain.setValueAtTime(0.0001, now);
+      noteGain.gain.linearRampToValueAtTime(peak, now + 0.003);
+      noteGain.gain.setValueAtTime(peak, now + sustainDur);
+      noteGain.gain.exponentialRampToValueAtTime(0.0001, now + sustainDur + 0.5);
+
+      source.connect(noteGain);
+      noteGain.connect(masterGain);
+
+      source.start(now);
+      source.stop(now + sustainDur + 0.55);
+    } catch (e) {
+      playSynthNote(midi, duration, velocity);
+    }
+  }
+
+  function playNoteSound(midi, duration = 0.3, velocity = 0.8) {
+    if (!soundEnabled || !audioCtx) return;
+    if (soundType === 'strudel') {
+      playStrudelSample(midi, duration, velocity);
+    } else {
+      playSynthNote(midi, duration, velocity);
+    }
+  }
+
+  // Realistic Grand Piano & Instrument Synthesizer (Fallback & Alternative Voice)
+  function playSynthNote(midi, duration = 0.3, velocity = 0.8) {
+    if (!soundEnabled || !audioCtx) return;
+    try {
+      const now = audioCtx.currentTime;
+      const freq = midiToFreq(midi);
+      const vel = Math.max(0.1, Math.min(1.0, velocity));
+
+      const naturalSustain = soundType === 'piano' || soundType === 'strudel'
+        ? Math.max(duration, 0.55 + (96 - Math.min(96, midi)) * 0.022)
+        : Math.max(0.25, duration);
+
+      const isBass = midi < 60;
+      const bassBoost = isBass ? (1.0 + (60 - midi) * 0.038) : (midi > 84 ? 0.92 : 1.0);
+      const peak = Math.min(0.85, vel * 0.65 * bassBoost);
+
+      const noteGain = audioCtx.createGain();
+      const filter = audioCtx.createBiquadFilter();
+
+      if (soundType === 'piano' || soundType === 'strudel') {
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        const osc3 = audioCtx.createOscillator();
+        let osc4 = null;
+
+        osc1.type = 'triangle';
+        osc1.frequency.setValueAtTime(freq, now);
+
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(freq * 2, now);
+        osc2.detune.setValueAtTime(3.5, now);
+
+        osc3.type = 'triangle';
+        osc3.frequency.setValueAtTime(freq, now);
+        osc3.detune.setValueAtTime(-3.5, now);
+
+        const g1 = audioCtx.createGain();
+        const g2 = audioCtx.createGain();
+        const g3 = audioCtx.createGain();
+        g1.gain.value = 0.75;
+        g2.gain.value = isBass ? 0.55 : 0.32;
+        g3.gain.value = 0.40;
+
+        osc1.connect(g1);
+        osc2.connect(g2);
+        osc3.connect(g3);
+        g1.connect(filter);
+        g2.connect(filter);
+        g3.connect(filter);
+
+        if (midi < 52) {
+          osc4 = audioCtx.createOscillator();
+          osc4.type = 'sine';
+          osc4.frequency.setValueAtTime(freq * 3, now);
+          const g4 = audioCtx.createGain();
+          g4.gain.value = 0.35;
+          osc4.connect(g4);
+          g4.connect(filter);
+          osc4.start(now);
+          osc4.stop(now + naturalSustain + 0.35);
+        }
+
+        filter.type = 'lowpass';
+        const startCutoff = isBass
+          ? Math.min(13000, freq * 7.5 + 2400 + vel * 4000)
+          : Math.min(11000, freq * 3.8 + vel * 3800);
+        const endCutoff = isBass
+          ? Math.max(750, freq * 3.2)
+          : Math.max(300, freq * 1.5);
+
+        filter.frequency.setValueAtTime(startCutoff, now);
+        filter.frequency.exponentialRampToValueAtTime(endCutoff, now + Math.min(0.25, naturalSustain * 0.4));
+
+        noteGain.gain.setValueAtTime(0.0001, now);
+        noteGain.gain.linearRampToValueAtTime(peak, now + 0.004);
+        noteGain.gain.exponentialRampToValueAtTime(peak * 0.56, now + 0.08);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, now + naturalSustain + 0.3);
+
+        filter.connect(noteGain);
+        noteGain.connect(masterGain);
+
+        osc1.start(now);
+        osc2.start(now);
+        osc3.start(now);
+        const stopTime = now + naturalSustain + 0.35;
+        osc1.stop(stopTime);
+        osc2.stop(stopTime);
+        osc3.stop(stopTime);
+      } else if (soundType === 'bright') {
+        const osc1 = audioCtx.createOscillator();
+        const osc2 = audioCtx.createOscillator();
+        osc1.type = 'sine';
+        osc2.type = 'triangle';
+        osc1.frequency.setValueAtTime(freq, now);
+        osc2.frequency.setValueAtTime(freq * 3, now);
+
+        const g1 = audioCtx.createGain();
+        const g2 = audioCtx.createGain();
+        g1.gain.value = 0.85;
+        g2.gain.value = 0.35;
+        osc1.connect(g1);
+        osc2.connect(g2);
+        g1.connect(filter);
+        g2.connect(filter);
+
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(Math.min(14000, freq * 6), now);
+        filter.frequency.exponentialRampToValueAtTime(Math.max(400, freq * 2), now + naturalSustain * 0.5);
+
+        noteGain.gain.setValueAtTime(0.0001, now);
+        noteGain.gain.linearRampToValueAtTime(peak, now + 0.005);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, now + naturalSustain + 0.25);
+
+        filter.connect(noteGain);
+        noteGain.connect(masterGain);
+        osc1.start(now);
+        osc2.start(now);
+        osc1.stop(now + naturalSustain + 0.3);
+        osc2.stop(now + naturalSustain + 0.3);
+      } else {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now);
+
+        noteGain.gain.setValueAtTime(0.0001, now);
+        noteGain.gain.linearRampToValueAtTime(peak * 0.75, now + 0.006);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, now + naturalSustain + 0.2);
+
+        osc.connect(noteGain);
+        noteGain.connect(masterGain);
+        osc.start(now);
+        osc.stop(now + naturalSustain + 0.25);
+      }
+    } catch (e) {
+      // Audio error suppressed
+    }
+  }
+
+  // Key mappings
+  const KEY_MAPPINGS = {
+    4: ['D', 'F', 'J', 'K'],
+    6: ['S', 'D', 'F', 'J', 'K', 'L'],
+    8: ['1', '2', '3', '4', '5', '6', '7', '8'],
+    12: ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '[', ']']
+  };
+  const KEY_ALIASES_8 = ['A', 'S', 'D', 'F', 'H', 'J', 'K', 'L'];
+
+  // Application State
+  let midiData = null;
+  let rawNotes = [];
+  let laneNotes = [];
+  let bpm = 120;
+  let duration = 0;
+  let currentTime = 0;
+  let playing = false;
+  let playStartTime = 0;
+  let playStartOffset = 0;
+  let speed = 1.0;
+  let laneCount = 8;
+  let pitchMin = 0;
+  let pitchMax = 127;
+  let gameMode = 'wait_chord'; // 'auto' | 'play' | 'wait_chord' | 'wait_all'
+  let tileWidthPreset = 'slim'; // 'slim' | 'compact' | 'medium' | 'full'
+  let isWaitingHit = false;
+  let waitingNotes = [];
+
+  // Mode 2 (Real Piano Roll) State & Geometry Engine
+  let viewMode = 'tiles'; // 'tiles' | 'roll'
+  let pianoRangePreset = 'auto'; // 'auto' | '88' | '61' | '49'
+  let rollStartMidi = 36;
+  let rollEndMidi = 84;
+  let rollWhiteKeys = [];
+  const rollKeyMap = new Map();
+  const activeRollKeys = new Map();
+
+  function updatePianoRollLayout() {
+    if (pianoRangePreset === '88') {
+      rollStartMidi = 21; // A0
+      rollEndMidi = 108;  // C8
+    } else if (pianoRangePreset === '61') {
+      rollStartMidi = 36; // C2
+      rollEndMidi = 96;   // C7
+    } else if (pianoRangePreset === '49') {
+      rollStartMidi = 48; // C3
+      rollEndMidi = 96;   // C7
+    } else {
+      // 'auto': Fit to active song pitch range with padding
+      if (rawNotes && rawNotes.length) {
+        let minM = Math.min(...rawNotes.map(n => n.midi));
+        let maxM = Math.max(...rawNotes.map(n => n.midi));
+        minM = Math.max(21, minM - (minM % 12));
+        maxM = Math.min(108, maxM + (11 - (maxM % 12)));
+        if (maxM - minM < 24) {
+          const mid = Math.round((minM + maxM) / 2);
+          minM = Math.max(21, mid - 12);
+          maxM = Math.min(108, mid + 12);
+        }
+        rollStartMidi = minM;
+        rollEndMidi = maxM;
+      } else {
+        rollStartMidi = 36;
+        rollEndMidi = 84;
+      }
+    }
+
+    if (isBlackKeyMidi(rollStartMidi) && rollStartMidi > 21) rollStartMidi--;
+    if (isBlackKeyMidi(rollEndMidi) && rollEndMidi < 108) rollEndMidi++;
+
+    rollWhiteKeys = [];
+    for (let m = rollStartMidi; m <= rollEndMidi; m++) {
+      if (!isBlackKeyMidi(m)) {
+        rollWhiteKeys.push(m);
+      }
+    }
+    const W = Math.max(1, rollWhiteKeys.length);
+
+    const w = canvas.clientWidth || 800;
+    const h = canvas.clientHeight || 600;
+    const kbH = Math.min(160, Math.max(96, Math.round(h * 0.22)));
+    const kbY = h - kbH;
+
+    const whiteW = w / W;
+    const whiteH = kbH;
+    const blackW = Math.max(9, whiteW * 0.65);
+    const blackH = kbH * 0.62;
+
+    rollKeyMap.clear();
+
+    for (let i = 0; i < rollWhiteKeys.length; i++) {
+      const m = rollWhiteKeys[i];
+      const x = i * whiteW;
+      rollKeyMap.set(m, {
+        midi: m,
+        isBlack: false,
+        x: x,
+        w: whiteW,
+        y: kbY,
+        h: whiteH,
+        whiteIndex: i,
+        name: midiToNoteName(m)
+      });
+    }
+
+    for (let m = rollStartMidi; m <= rollEndMidi; m++) {
+      if (isBlackKeyMidi(m)) {
+        const leftWhiteM = m - 1;
+        const leftGeom = rollKeyMap.get(leftWhiteM);
+        if (leftGeom) {
+          const dividerX = leftGeom.x + leftGeom.w;
+          const x = dividerX - blackW / 2;
+          rollKeyMap.set(m, {
+            midi: m,
+            isBlack: true,
+            x: x,
+            w: blackW,
+            y: kbY,
+            h: blackH,
+            name: midiToNoteName(m)
+          });
+        }
+      }
+    }
+  }
+
+  function getTileWidth(laneW) {
+    if (tileWidthPreset === 'compact') {
+      const cap = laneCount <= 4 ? 70 : 48;
+      return Math.max(16, Math.min(cap, Math.round(laneW * 0.26)));
+    }
+    if (tileWidthPreset === 'medium') {
+      const cap = laneCount <= 4 ? 160 : 110;
+      return Math.max(24, Math.min(cap, Math.round(laneW * 0.58)));
+    }
+    if (tileWidthPreset === 'full') {
+      return Math.max(28, laneW - 20);
+    }
+    // Default: 'slim' (Ramping) - sleek and narrow, leaving plenty of negative space!
+    const cap = laneCount <= 4 ? 110 : (laneCount <= 6 ? 90 : 74);
+    return Math.max(20, Math.min(cap, Math.round(laneW * 0.38)));
+  }
+
+  function updateWaitingKeyVisuals() {
+    document.querySelectorAll('.piano-key.waiting-key').forEach(k => k.classList.remove('waiting-key'));
+    if (!isWaitingHit || !waitingNotes.length) return;
+    for (const n of waitingNotes) {
+      const el = document.getElementById(`key-badge-${n.lane}`);
+      if (el) el.classList.add('waiting-key');
+    }
+  }
+  let score = 0;
+  let combo = 0;
+
+  const HIT_ZONE = 0.80;     // Hit line at 80% of canvas height (aligned above piano keys)
+  const TRAVEL_TIME = 2.8;   // Seconds from top of screen to hit line
+
+  // Visual Effects: Particles & Flashes
+  const particles = [];
+  const hitFlashes = [];
+
+  function addHitEffect(laneIndex, hitAccuracy = 'PERFECT') {
+    const laneW = canvas.clientWidth / laneCount;
+    const tileW = getTileWidth(laneW);
+    const x = laneIndex * laneW + laneW / 2;
+    const y = canvas.clientHeight * HIT_ZONE;
+
+    hitFlashes.push({ lane: laneIndex, life: 1.0 });
+
+    const colors = hitAccuracy === 'PERFECT'
+      ? ['#facc15', '#fef08a', '#38bdf8']
+      : ['#38bdf8', '#818cf8', '#ffffff'];
+
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 120;
+      particles.push({
+        x: x + (Math.random() - 0.5) * (tileW * 0.75),
+        y: y + (Math.random() - 0.5) * 10,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd * 0.7 - 25,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 3 + Math.random() * 3.5,
+        alpha: 1.0,
+        life: 0.55
+      });
+    }
+
+    if (gameMode !== 'auto') {
+      showFloatingJudge(x, y, hitAccuracy);
+    }
+  }
+
+  function addRollHitEffect(midi, hitAccuracy = 'PERFECT') {
+    const geom = rollKeyMap.get(midi);
+    const kbH = Math.min(160, Math.max(96, Math.round(canvas.clientHeight * 0.22)));
+    const kbY = canvas.clientHeight - kbH;
+    const x = geom ? (geom.x + geom.w / 2) : (canvas.clientWidth / 2);
+    const y = kbY;
+
+    activeRollKeys.set(midi, performance.now() + 260);
+
+    const colors = hitAccuracy === 'PERFECT'
+      ? ['#facc15', '#fef08a', '#38bdf8']
+      : ['#38bdf8', '#c084fc', '#ffffff'];
+
+    for (let i = 0; i < 14; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spd = 60 + Math.random() * 120;
+      particles.push({
+        x: x + (Math.random() - 0.5) * (geom ? geom.w : 24),
+        y: y + (Math.random() - 0.5) * 8,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd * 0.7 - 35,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        size: 3 + Math.random() * 3.5,
+        alpha: 1.0,
+        life: 0.55
+      });
+    }
+
+    if (gameMode !== 'auto') {
+      showFloatingJudge(x, y - 20, hitAccuracy);
+    }
+  }
+
+  function showFloatingJudge(x, y, text, type = '') {
+    const el = document.createElement('div');
+    let typeClass = 'judge-perfect';
+    if (type) {
+      typeClass = `judge-${type}`;
+    } else {
+      const lower = text.toLowerCase();
+      if (lower.includes('miss')) typeClass = 'judge-miss';
+      else if (lower.includes('great')) typeClass = 'judge-great';
+      else if (lower.includes('mega') || lower.includes('octa')) typeClass = 'judge-megachord';
+      else if (lower.includes('chord')) typeClass = 'judge-chord';
+    }
+    el.className = `floating-judge ${typeClass}`;
+    el.textContent = text;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    document.getElementById('stage').appendChild(el);
+    setTimeout(() => el.remove(), 650);
+  }
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = canvas.clientWidth * dpr;
+    canvas.height = canvas.clientHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    updatePianoRollLayout();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function fmtTime(sec) {
+    sec = Math.max(0, sec || 0);
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function setStatus(s) { statusEl.textContent = s; }
+
+  function clearSong() {
+    midiData = null;
+    rawNotes = [];
+    laneNotes = [];
+    duration = 0;
+    currentTime = 0;
+    playing = false;
+    playStartTime = 0;
+    playStartOffset = 0;
+    score = 0;
+    combo = 0;
+    isWaitingHit = false;
+    waitingNotes = [];
+    updateWaitingKeyVisuals();
+    updateScoreDisplay();
+    playBtn.disabled = true;
+    resetBtn.disabled = true;
+    exportBtn.disabled = true;
+    timelineProgress.style.width = '0%';
+  }
+
+  function updateScoreDisplay() {
+    scoreVal.textContent = score.toLocaleString();
+    comboVal.textContent = combo.toString();
+  }
+
+  const mutedLanes = new Set(); // Lanes muted from auto MIDI playback
+
+  function toggleLaneMute(laneIndex) {
+    if (mutedLanes.has(laneIndex)) {
+      mutedLanes.delete(laneIndex);
+    } else {
+      mutedLanes.add(laneIndex);
+    }
+    if (mutedLanes.size === 0) {
+      autoMutePresetSelect.value = 'none';
+    } else if (mutedLanes.size === laneCount) {
+      autoMutePresetSelect.value = 'all';
+    } else {
+      let customOpt = autoMutePresetSelect.querySelector('option[value="custom"]');
+      if (!customOpt) {
+        customOpt = document.createElement('option');
+        customOpt.value = 'custom';
+        customOpt.textContent = 'Custom Mute';
+        autoMutePresetSelect.appendChild(customOpt);
+      }
+      autoMutePresetSelect.value = 'custom';
+    }
+    renderLaneKeyBadges();
+    const isMuted = mutedLanes.has(laneIndex);
+    setStatus(isMuted 
+      ? `Jalur ${laneIndex + 1} di-mute dari auto audio. Hanya tuts ketikan Anda yang bersuara di jalur ini!` 
+      : `Jalur ${laneIndex + 1} auto audio aktif kembali.`);
+  }
+
+  function applyMutePreset(preset) {
+    mutedLanes.clear();
+    const half = Math.floor(laneCount / 2);
+    if (preset === 'right') {
+      for (let i = half; i < laneCount; i++) mutedLanes.add(i);
+      setStatus(`Mute Melodi (Jalur ${half + 1}-${laneCount}) aktif. Hanya tuts ketikan Anda yang bersuara!`);
+    } else if (preset === 'left') {
+      for (let i = 0; i < half; i++) mutedLanes.add(i);
+      setStatus(`Mute Bass (Jalur 1-${half}) aktif. Hanya tuts ketikan Anda yang bersuara!`);
+    } else if (preset === 'all') {
+      for (let i = 0; i < laneCount; i++) mutedLanes.add(i);
+      setStatus('Mute Semua Auto aktif. Suara 100% dari tuts ketikan Anda!');
+    } else {
+      setStatus('Semua jalur audio otomatis aktif.');
+    }
+    renderLaneKeyBadges();
+  }
+
+  function renderLaneKeyBadges() {
+    laneKeysContainer.innerHTML = '';
+    const keys = KEY_MAPPINGS[laneCount] || [];
+    const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+    for (let i = 0; i < laneCount; i++) {
+      const isMuted = mutedLanes.has(i);
+      const noteObj = laneDefaultNotes[i];
+      const midi = noteObj ? noteObj.midi : (60 + i);
+      const noteName = noteObj && noteObj.name ? noteObj.name : `${noteNames[midi % 12]}${Math.floor(midi / 12) - 1}`;
+      const isBlackKey = [1, 3, 6, 8, 10].includes(midi % 12);
+      const keyLabel = keys[i] || `${i + 1}`;
+
+      const keyBox = document.createElement('div');
+      keyBox.className = 'lane-key';
+      keyBox.innerHTML = `
+        <div class="piano-key ${isBlackKey ? 'piano-black-key' : 'piano-white-key'} ${isMuted ? 'lane-muted' : ''}" id="key-badge-${i}" data-lane="${i}" title="Jalur ${i + 1} (${noteName}) - Tuts [${keyLabel}]">
+          <button class="lane-mute-btn ${isMuted ? 'muted' : ''}" data-lane="${i}" title="${isMuted ? 'Nyalakan kembali auto audio Jalur ' + (i + 1) : 'Mute auto audio Jalur ' + (i + 1) + ' (agar hanya tuts ketikan yang bersuara)'}">
+            ${isMuted ? '🔇' : '🔊'}
+          </button>
+          <div class="piano-key-body">
+            <span class="piano-key-char">${keyLabel}</span>
+            <span class="piano-key-note">${noteName}</span>
+          </div>
+        </div>
+      `;
+
+      // Allow clicking directly on the piano key
+      const pianoKeyEl = keyBox.querySelector('.piano-key');
+      pianoKeyEl.addEventListener('pointerdown', e => {
+        if (e.target.closest('.lane-mute-btn')) return;
+        handleLaneInput(i);
+      });
+
+      // Mute button click
+      const muteBtn = keyBox.querySelector('.lane-mute-btn');
+      muteBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        toggleLaneMute(i);
+      });
+
+      laneKeysContainer.appendChild(keyBox);
+    }
+  }
+
+  function pitchToLane(pitch) {
+    if (pitchMax === pitchMin) return Math.floor(laneCount / 2);
+    const t = (pitch - pitchMin) / (pitchMax - pitchMin);
+    return Math.max(0, Math.min(laneCount - 1, Math.floor(t * laneCount)));
+  }
+
+  let laneDefaultNotes = [];
+  let chordGroups = [];
+
+  function buildLanes() {
+    laneCount = Number(lanesSelect.value);
+    for (const l of [...mutedLanes]) {
+      if (l >= laneCount) mutedLanes.delete(l);
+    }
+
+    laneNotes = rawNotes.map(n => ({
+      ...n,
+      lane: pitchToLane(n.midi),
+      playedSound: false,
+      hit: false,
+      chordSize: 1,
+      chordGroup: null
+    }));
+
+    // Pre-calculate chord groups: notes starting within 0.04s of each other
+    const timeBuckets = new Map();
+    for (const n of laneNotes) {
+      const key = Math.round(n.time * 25) / 25; // 40ms quantization
+      if (!timeBuckets.has(key)) timeBuckets.set(key, []);
+      timeBuckets.get(key).push(n);
+    }
+
+    chordGroups = [];
+    for (const [key, group] of timeBuckets.entries()) {
+      if (group.length >= 2) {
+        chordGroups.push(group);
+        for (const n of group) {
+          n.chordSize = group.length;
+          n.chordGroup = group;
+        }
+      }
+    }
+
+    // Calculate representative pitch from actual MIDI notes in each lane
+    laneDefaultNotes = [];
+    for (let i = 0; i < laneCount; i++) {
+      const notesInLane = laneNotes.filter(n => n.lane === i);
+      if (notesInLane.length > 0) {
+        const sorted = [...notesInLane].sort((a, b) => a.midi - b.midi);
+        laneDefaultNotes[i] = sorted[Math.floor(sorted.length / 2)];
+      } else {
+        const t = (laneCount > 1) ? i / (laneCount - 1) : 0.5;
+        const midi = Math.round(pitchMin + t * (pitchMax - pitchMin));
+        laneDefaultNotes[i] = { midi, duration: 0.35, velocity: 0.8 };
+      }
+    }
+
+    renderLaneKeyBadges();
+    if (rawNotes && rawNotes.length) {
+      preloadSongSamples();
+    }
+  }
+
+  async function loadMidi(file) {
+    clearSong();
+    setStatus('Membaca dan memproses file MIDI…');
+    try {
+      const buffer = await file.arrayBuffer();
+      let parsed = null;
+
+      if (window.Midi) {
+        parsed = new window.Midi(buffer);
+      } else {
+        throw new Error('Tone.js Midi parser tidak siap.');
+      }
+
+      midiData = parsed;
+      const tempo = parsed.header.tempos && parsed.header.tempos.length
+        ? parsed.header.tempos[0].bpm
+        : 120;
+      bpm = Number.isFinite(tempo) ? Math.round(tempo) : 120;
+
+      const raw = [];
+      let noteIdCounter = 0;
+      for (const track of parsed.tracks) {
+        for (const n of track.notes) {
+          raw.push({
+            id: ++noteIdCounter,
+            time: n.time,
+            duration: Math.max(0.05, n.duration),
+            midi: n.midi,
+            velocity: n.velocity ?? 0.8,
+            name: n.name || ''
+          });
+        }
+      }
+
+      raw.sort((a, b) => a.time - b.time || a.midi - b.midi);
+      if (!raw.length) throw new Error('Tidak ditemukan not musik dalam file MIDI.');
+
+      pitchMin = Math.min(...raw.map(n => n.midi));
+      pitchMax = Math.max(...raw.map(n => n.midi));
+
+      duration = Math.max(
+        parsed.duration || 0,
+        ...raw.map(n => n.time + n.duration)
+      );
+
+      rawNotes = raw;
+      buildLanes();
+
+      const baseName = file.name ? file.name.replace(/\.(mid|midi)$/i, '') : 'Demo Song';
+      songName.textContent = baseName;
+      bpmEl.textContent = bpm;
+      noteCountEl.textContent = rawNotes.length.toLocaleString();
+      timeEl.textContent = `0:00 / ${fmtTime(duration)}`;
+
+      playBtn.disabled = false;
+      resetBtn.disabled = false;
+      exportBtn.disabled = false;
+      drop.style.display = 'none';
+      setStatus('MIDI siap! Klik ▶ Play atau tekan Spasi untuk memulai.');
+    } catch (err) {
+      console.error(err);
+      setStatus('Gagal membaca MIDI: ' + err.message);
+      drop.style.display = 'flex';
+    }
+  }
+
+  async function loadDemoSong() {
+    setStatus('Mengambil file demo.mid…');
+    try {
+      const res = await fetch('demo.mid');
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const blob = await res.blob();
+      const file = new File([blob], 'Canon in D (Demo).mid', { type: 'audio/midi' });
+      await loadMidi(file);
+    } catch (e) {
+      generateFallbackDemo();
+    }
+  }
+
+  function generateFallbackDemo() {
+    clearSong();
+    bpm = 100;
+    const noteNames = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const getNoteName = (m) => `${noteNames[m % 12]}${Math.floor(m / 12) - 1}`;
+    const scoreData = [
+      [0, 1.2, 50], [0, 1.2, 74], [1.2, 1.2, 45], [1.2, 1.2, 73],
+      [2.4, 1.2, 47], [2.4, 1.2, 71], [3.6, 1.2, 42], [3.6, 1.2, 69],
+      [4.8, 1.2, 43], [4.8, 1.2, 67], [6.0, 1.2, 50], [6.0, 1.2, 66],
+      [7.2, 1.2, 43], [7.2, 1.2, 67], [8.4, 1.2, 45], [8.4, 1.2, 69],
+      [9.6, 0.6, 74], [10.2, 0.6, 73], [10.8, 0.6, 74], [11.4, 0.6, 76],
+      [12.0, 0.6, 78], [12.6, 0.6, 74], [13.2, 0.6, 76], [13.8, 0.6, 78],
+      [14.4, 0.6, 79], [15.0, 0.6, 78], [15.6, 0.6, 76], [16.2, 0.6, 74],
+      [16.8, 0.6, 73], [17.4, 0.6, 71], [18.0, 1.2, 74],
+      // 4-Lane Quad Chord Climax
+      [19.5, 1.4, 50], [19.5, 1.4, 57], [19.5, 1.4, 66], [19.5, 1.4, 74],
+      // 8-Lane Octa Chord Grand Finale (simultaneous hit across all lanes)
+      [21.5, 2.2, 38], [21.5, 2.2, 45], [21.5, 2.2, 50], [21.5, 2.2, 57],
+      [21.5, 2.2, 62], [21.5, 2.2, 66], [21.5, 2.2, 69], [21.5, 2.2, 74]
+    ];
+    rawNotes = scoreData.map((d, i) => ({
+      id: i + 1,
+      time: d[0],
+      duration: d[1],
+      midi: d[2],
+      velocity: 0.85,
+      name: getNoteName(d[2])
+    }));
+    pitchMin = Math.min(...rawNotes.map(n => n.midi));
+    pitchMax = Math.max(...rawNotes.map(n => n.midi));
+    duration = Math.max(...rawNotes.map(n => n.time + n.duration)) + 1.0;
+    buildLanes();
+
+    songName.textContent = 'Canon in D (Built-in Demo)';
+    bpmEl.textContent = bpm;
+    noteCountEl.textContent = rawNotes.length;
+    timeEl.textContent = `0:00 / ${fmtTime(duration)}`;
+    playBtn.disabled = false;
+    resetBtn.disabled = false;
+    exportBtn.disabled = false;
+    drop.style.display = 'none';
+    setStatus('Lagu Demo siap! Klik ▶ Play.');
+  }
+
+  // Draw Functions
+  function draw() {
+    const w = canvas.clientWidth;
+    const h = canvas.clientHeight;
+    ctx.clearRect(0, 0, w, h);
+
+    if (viewMode === 'roll') {
+      drawRollBackground(w, h);
+      drawRollNotes(w, h);
+      drawPianoKeyboard(w, h);
+      drawParticles(w, h);
+    } else {
+      drawBackground(w, h);
+      drawLanes(w, h);
+      drawHitLine(w, h);
+      drawTiles(w, h);
+      drawParticles(w, h);
+    }
+  }
+
+  function drawBackground(w, h) {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, 'rgba(18, 23, 40, 0.4)');
+    g.addColorStop(1, 'rgba(6, 8, 14, 0.25)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+  }
+
+  function drawRollBackground(w, h) {
+    const kbH = Math.min(160, Math.max(96, Math.round(h * 0.22)));
+    const kbY = h - kbH;
+
+    // Dark backdrop with subtle depth
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, kbY);
+    bgGrad.addColorStop(0, '#0a0d17');
+    bgGrad.addColorStop(1, '#05070d');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, kbY);
+
+    // Subtle track corridor lines
+    for (const [midi, geom] of rollKeyMap.entries()) {
+      if (geom.isBlack) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx.fillRect(geom.x, 0, geom.w, kbY);
+
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(geom.x, 0);
+        ctx.lineTo(geom.x, kbY);
+        ctx.moveTo(geom.x + geom.w, 0);
+        ctx.lineTo(geom.x + geom.w, kbY);
+        ctx.stroke();
+      } else {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.035)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(geom.x, 0);
+        ctx.lineTo(geom.x, kbY);
+        ctx.stroke();
+
+        // C note octave divider marker
+        if (midi % 12 === 0) {
+          ctx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.moveTo(geom.x, 0);
+          ctx.lineTo(geom.x, kbY);
+          ctx.stroke();
+
+          ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+          ctx.font = 'bold 9px system-ui';
+          ctx.textAlign = 'center';
+          ctx.fillText(geom.name, geom.x + geom.w / 2, 20);
+        }
+      }
+    }
+  }
+
+  function drawRollNotes(w, h) {
+    const kbH = Math.min(160, Math.max(96, Math.round(h * 0.22)));
+    const kbY = h - kbH;
+    const travelTime = 2.8 / speed;
+    const now = currentTime;
+
+    // Draw chord connector bridges in Roll mode
+    const drawnChords = new Set();
+    for (const n of laneNotes) {
+      if (n.chordGroup && !drawnChords.has(n.chordGroup)) {
+        const untilHit = n.time - now;
+        if (untilHit <= travelTime && untilHit >= -0.25) {
+          drawnChords.add(n.chordGroup);
+          const progress = 1 - (untilHit / travelTime);
+          const barY = progress * kbY - 8;
+
+          const geoms = n.chordGroup.map(m => rollKeyMap.get(m.midi)).filter(Boolean);
+          if (geoms.length >= 2) {
+            const xs = geoms.map(g => g.x + g.w / 2);
+            const minX = Math.min(...xs);
+            const maxX = Math.max(...xs);
+
+            const isBig = n.chordSize >= 4;
+            ctx.save();
+            ctx.strokeStyle = isBig ? '#fbbf24' : '#c084fc';
+            ctx.lineWidth = isBig ? 3.5 : 2.5;
+            ctx.shadowColor = isBig ? '#f59e0b' : '#a855f7';
+            ctx.shadowBlur = 12;
+
+            ctx.beginPath();
+            ctx.moveTo(minX, barY);
+            ctx.lineTo(maxX, barY);
+            ctx.stroke();
+
+            const midX = (minX + maxX) / 2;
+            const badgeW = isBig ? 64 : 52;
+            ctx.fillStyle = isBig ? 'rgba(30, 20, 5, 0.94)' : 'rgba(20, 10, 35, 0.94)';
+            ctx.strokeStyle = isBig ? '#fbbf24' : '#c084fc';
+            ctx.lineWidth = 1;
+            roundRect(ctx, midX - badgeW / 2, barY - 7, badgeW, 14, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isBig ? '#fef08a' : '#f5d0fe';
+            ctx.font = 'bold 8px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${n.chordSize}x CHORD`, midX, barY + 3);
+            ctx.restore();
+          }
+        }
+      }
+    }
+
+    // Draw the falling notes
+    for (const n of laneNotes) {
+      const geom = rollKeyMap.get(n.midi);
+      if (!geom) continue;
+
+      const untilHit = n.time - now;
+      if (untilHit > travelTime || untilHit < -Math.max(0.3, n.duration)) continue;
+
+      const progress = 1 - (untilHit / travelTime);
+      const yBottom = progress * kbY;
+      const noteH = Math.max(12, (n.duration / travelTime) * kbY);
+      const yTop = yBottom - noteH;
+
+      if (yBottom < -10 || yTop > kbY + 30) continue;
+
+      const isBlack = geom.isBlack;
+      const noteX = isBlack ? geom.x + 1 : geom.x + 2;
+      const noteW = isBlack ? Math.max(6, geom.w - 2) : Math.max(8, geom.w - 4);
+
+      ctx.save();
+
+      const isPlayingNow = now >= n.time && now <= n.time + n.duration;
+      if (isPlayingNow) {
+        activeRollKeys.set(n.midi, performance.now() + 100);
+      }
+
+      const isBass = n.midi < 60;
+      const isChord = n.chordSize >= 2;
+
+      let cTop, cBottom, glowColor;
+      if (isChord) {
+        cTop = '#fde047';
+        cBottom = '#d97706';
+        glowColor = '#f59e0b';
+      } else if (isBass) {
+        cTop = isBlack ? '#38bdf8' : '#7dd3fc';
+        cBottom = isBlack ? '#0284c7' : '#0369a1';
+        glowColor = '#38bdf8';
+      } else {
+        cTop = isBlack ? '#e879f9' : '#c084fc';
+        cBottom = isBlack ? '#9333ea' : '#6366f1';
+        glowColor = '#a855f7';
+      }
+
+      const grad = ctx.createLinearGradient(0, yTop, 0, yBottom);
+      grad.addColorStop(0, cTop);
+      grad.addColorStop(1, cBottom);
+
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = isChord ? '#fef08a' : 'rgba(255, 255, 255, 0.7)';
+      ctx.lineWidth = isChord ? 1.8 : 1.2;
+
+      if (isPlayingNow || isChord) {
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = isPlayingNow ? 14 : 8;
+      }
+
+      const r = Math.min(5, noteW / 2);
+      roundRect(ctx, noteX, yTop, noteW, noteH, r);
+      ctx.fill();
+      ctx.stroke();
+
+      if (noteW >= 22 && noteH >= 18) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 9px system-ui';
+        ctx.textAlign = 'center';
+        ctx.shadowBlur = 0;
+        ctx.fillText(geom.name, noteX + noteW / 2, yBottom - 6);
+      }
+
+      ctx.restore();
+    }
+  }
+
+  function drawPianoKeyboard(w, h) {
+    const kbH = Math.min(160, Math.max(96, Math.round(h * 0.22)));
+    const kbY = h - kbH;
+    const nowMs = performance.now();
+
+    for (const [m, expire] of activeRollKeys.entries()) {
+      if (nowMs > expire) activeRollKeys.delete(m);
+    }
+
+    const isWaiting = isWaitingHit && waitingNotes.length > 0;
+    const chordApproaching = isWaiting || laneNotes.some(n => n.chordSize >= 2 && !n.hit && Math.abs(currentTime - n.time) <= 0.35);
+
+    // 1. Draw Fallboard / Hit Rim
+    ctx.save();
+    const rimGrad = ctx.createLinearGradient(0, kbY - 8, 0, kbY);
+    rimGrad.addColorStop(0, 'rgba(15, 23, 42, 0.85)');
+    rimGrad.addColorStop(1, '#1e293b');
+    ctx.fillStyle = rimGrad;
+    ctx.fillRect(0, kbY - 8, w, 8);
+
+    ctx.strokeStyle = (isWaiting || chordApproaching) ? '#fbbf24' : '#38bdf8';
+    ctx.shadowColor = (isWaiting || chordApproaching) ? '#f59e0b' : '#38bdf8';
+    ctx.shadowBlur = (isWaiting || chordApproaching) ? 14 : 8;
+    ctx.lineWidth = (isWaiting || chordApproaching) ? 3 : 2;
+    ctx.beginPath();
+    ctx.moveTo(0, kbY);
+    ctx.lineTo(w, kbY);
+    ctx.stroke();
+    ctx.restore();
+
+    // 2. Draw White Keys
+    for (const m of rollWhiteKeys) {
+      const geom = rollKeyMap.get(m);
+      if (!geom) continue;
+
+      const isPressed = activeRollKeys.has(m);
+      const isWaitKey = isWaiting && waitingNotes.some(w => w.midi === m);
+
+      ctx.save();
+      let fillGrad;
+      if (isWaitKey) {
+        fillGrad = ctx.createLinearGradient(0, kbY, 0, kbY + kbH);
+        fillGrad.addColorStop(0, '#fef08a');
+        fillGrad.addColorStop(0.5, '#f59e0b');
+        fillGrad.addColorStop(1, '#b45309');
+        ctx.shadowColor = '#f59e0b';
+        ctx.shadowBlur = 14;
+      } else if (isPressed) {
+        fillGrad = ctx.createLinearGradient(0, kbY, 0, kbY + kbH);
+        fillGrad.addColorStop(0, '#bae6fd');
+        fillGrad.addColorStop(0.6, '#38bdf8');
+        fillGrad.addColorStop(1, '#0284c7');
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 10;
+      } else {
+        fillGrad = ctx.createLinearGradient(0, kbY, 0, kbY + kbH);
+        fillGrad.addColorStop(0, '#ffffff');
+        fillGrad.addColorStop(0.85, '#f1f5f9');
+        fillGrad.addColorStop(1, '#cbd5e1');
+      }
+
+      ctx.fillStyle = fillGrad;
+      drawCompatRoundRect(ctx, geom.x + 0.5, kbY, geom.w - 1, kbH, [0, 0, 4, 4]);
+      ctx.fill();
+
+      ctx.strokeStyle = isWaitKey ? '#f59e0b' : (isPressed ? '#38bdf8' : '#334155');
+      ctx.lineWidth = (isWaitKey || isPressed) ? 1.5 : 0.8;
+      ctx.stroke();
+
+      const isC = m % 12 === 0;
+      if (isC || geom.w >= 26 || isWaitKey) {
+        const badgeY = kbY + kbH - 16;
+        ctx.fillStyle = isWaitKey ? '#78350f' : (isPressed ? '#0369a1' : (isC ? '#0f172a' : '#64748b'));
+        ctx.font = isC ? 'bold 11px system-ui' : '9px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(geom.name, geom.x + geom.w / 2, badgeY);
+
+        if (isC && !isWaitKey && !isPressed) {
+          ctx.strokeStyle = '#0284c7';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.arc(geom.x + geom.w / 2, badgeY - 4, 11, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    // 3. Draw Black Keys (on top of white keys)
+    for (const [m, geom] of rollKeyMap.entries()) {
+      if (!geom.isBlack) continue;
+
+      const isPressed = activeRollKeys.has(m);
+      const isWaitKey = isWaiting && waitingNotes.some(w => w.midi === m);
+
+      ctx.save();
+      let bGrad;
+      if (isWaitKey) {
+        bGrad = ctx.createLinearGradient(0, kbY, 0, kbY + geom.h);
+        bGrad.addColorStop(0, '#fbbf24');
+        bGrad.addColorStop(0.5, '#d97706');
+        bGrad.addColorStop(1, '#92400e');
+        ctx.shadowColor = '#f59e0b';
+        ctx.shadowBlur = 14;
+      } else if (isPressed) {
+        bGrad = ctx.createLinearGradient(0, kbY, 0, kbY + geom.h);
+        bGrad.addColorStop(0, '#e879f9');
+        bGrad.addColorStop(0.5, '#c084fc');
+        bGrad.addColorStop(1, '#7e22ce');
+        ctx.shadowColor = '#c084fc';
+        ctx.shadowBlur = 10;
+      } else {
+        bGrad = ctx.createLinearGradient(0, kbY, 0, kbY + geom.h);
+        bGrad.addColorStop(0, '#2d3748');
+        bGrad.addColorStop(0.2, '#1a202c');
+        bGrad.addColorStop(0.85, '#0d1117');
+        bGrad.addColorStop(1, '#05070a');
+      }
+
+      ctx.fillStyle = bGrad;
+      drawCompatRoundRect(ctx, geom.x, kbY, geom.w, geom.h, [0, 0, 3, 3]);
+      ctx.fill();
+
+      if (!isPressed && !isWaitKey) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.18)';
+        ctx.fillRect(geom.x + 1, kbY + 1, geom.w - 2, 2);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(geom.x, kbY + geom.h - 3, geom.w, 3);
+      }
+
+      ctx.strokeStyle = isWaitKey ? '#f59e0b' : (isPressed ? '#e879f9' : '#111827');
+      ctx.lineWidth = (isWaitKey || isPressed) ? 1.5 : 0.8;
+      ctx.stroke();
+
+      if (isWaitKey && geom.w >= 14) {
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 8px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(geom.name, geom.x + geom.w / 2, kbY + geom.h - 6);
+      }
+
+      ctx.restore();
+    }
+
+    // Center Timing Guide Badge in Roll Mode
+    if (isWaiting || chordApproaching) {
+      ctx.save();
+      const badgeText = isWaiting
+        ? '⏸️ TEKAN TUTS PIANO EMAS UNTUK LANJUT ⏸️'
+        : '⚡ CHORD ZONE ⚡';
+      const badgeW = isWaiting ? 250 : 130;
+      const badgeH = 18;
+      const badgeX = w / 2 - badgeW / 2;
+      const badgeY = kbY - badgeH / 2;
+
+      ctx.fillStyle = 'rgba(30, 20, 5, 0.96)';
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 1.3;
+      roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 5);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#fef08a';
+      ctx.font = 'bold 9px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText(badgeText, w / 2, kbY + 3.5);
+      ctx.restore();
+    }
+  }
+
+  function drawLanes(w, h) {
+    const laneW = w / laneCount;
+    const tileW = getTileWidth(laneW);
+
+    for (let i = 0; i < laneCount; i++) {
+      const x = i * laneW;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255, 0.018)' : 'rgba(255,255,255, 0.032)';
+      ctx.fillRect(x, 0, laneW, h);
+
+      // Draw subtle centered slim runway column for the tile
+      const trackX = x + (laneW - tileW) / 2;
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.035)';
+      ctx.fillRect(trackX, 0, tileW, h);
+
+      // Subtle track runway vertical edges
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(trackX, 0);
+      ctx.lineTo(trackX, h);
+      ctx.moveTo(trackX + tileW, 0);
+      ctx.lineTo(trackX + tileW, h);
+      ctx.stroke();
+
+      if (mutedLanes.has(i)) {
+        ctx.fillStyle = 'rgba(239, 68, 68, 0.08)';
+        ctx.fillRect(x, 0, laneW, h);
+
+        ctx.fillStyle = 'rgba(248, 113, 113, 0.7)';
+        ctx.font = 'bold 9px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText('🔇 TUTS ONLY', x + laneW / 2, 22);
+      }
+
+      // Lane divider border
+      ctx.strokeStyle = 'rgba(140, 160, 210, 0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+
+      const flash = hitFlashes.find(f => f.lane === i);
+      if (flash && flash.life > 0) {
+        ctx.fillStyle = `rgba(56, 189, 248, ${flash.life * 0.32})`;
+        ctx.fillRect(trackX, 0, tileW, h);
+      }
+    }
+  }
+
+  function drawHitLine(w, h) {
+    const y = h * HIT_ZONE;
+    const laneW = w / laneCount;
+    const tileW = getTileWidth(laneW);
+    const receptorH = 26;
+    const receptorY = y - receptorH / 2;
+
+    // Check if any chord or note is arriving at hit line within 0.35s or currently waiting in Stop Chord mode
+    const isWaiting = isWaitingHit && waitingNotes.length > 0;
+    const chordApproaching = isWaiting || laneNotes.some(n => n.chordSize >= 2 && !n.hit && Math.abs(currentTime - n.time) <= 0.35);
+
+    // Hit line background ambient glow
+    const hitGrad = ctx.createLinearGradient(0, y - 28, 0, y + 28);
+    hitGrad.addColorStop(0, 'rgba(99, 102, 241, 0)');
+    hitGrad.addColorStop(0.5, chordApproaching ? 'rgba(251, 191, 36, 0.24)' : 'rgba(56, 189, 248, 0.16)');
+    hitGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
+    ctx.fillStyle = hitGrad;
+    ctx.fillRect(0, y - 28, w, 56);
+
+    // Per-lane Target Receptor Boxes (where slim tiles land for PERFECT hit)
+    for (let i = 0; i < laneCount; i++) {
+      const tileX = i * laneW + (laneW - tileW) / 2;
+      const isMuted = mutedLanes.has(i);
+      const isWaitingLane = isWaiting && waitingNotes.some(n => n.lane === i);
+
+      // Check if this lane has a note near the receptor
+      const noteNear = isWaitingLane || laneNotes.some(n => n.lane === i && !n.hit && Math.abs(currentTime - n.time) <= 0.25);
+
+      ctx.save();
+      const frameColor = (isWaitingLane || chordApproaching) 
+        ? '#fbbf24' 
+        : (noteNear ? '#38bdf8' : (isMuted ? 'rgba(239, 68, 68, 0.45)' : 'rgba(100, 130, 180, 0.38)'));
+      ctx.strokeStyle = frameColor;
+      ctx.lineWidth = (isWaitingLane || chordApproaching || noteNear) ? 2.5 : 1.2;
+
+      if (isWaitingLane || chordApproaching || noteNear) {
+        ctx.shadowColor = (isWaitingLane || chordApproaching) ? '#f59e0b' : '#38bdf8';
+        ctx.shadowBlur = 12;
+      }
+
+      const fillColor = (isWaitingLane || chordApproaching) 
+        ? 'rgba(251, 191, 36, 0.20)' 
+        : (noteNear ? 'rgba(56, 189, 248, 0.16)' : 'rgba(15, 23, 42, 0.55)');
+      ctx.fillStyle = fillColor;
+
+      roundRect(ctx, tileX, receptorY, tileW, receptorH, 6);
+      ctx.fill();
+      ctx.stroke();
+
+      // Center guide line inside receptor
+      ctx.strokeStyle = (isWaitingLane || chordApproaching || noteNear) ? 'rgba(255, 255, 255, 0.85)' : 'rgba(140, 160, 200, 0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(tileX + 4, y);
+      ctx.lineTo(tileX + tileW - 4, y);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // High-contrast Laser Strike Line across the receptors
+    ctx.save();
+    const beamGrad = ctx.createLinearGradient(0, y, w, y);
+    beamGrad.addColorStop(0, 'rgba(56, 189, 248, 0.15)');
+    beamGrad.addColorStop(0.1, chordApproaching ? '#fbbf24' : '#38bdf8');
+    beamGrad.addColorStop(0.5, '#ffffff');
+    beamGrad.addColorStop(0.9, chordApproaching ? '#fbbf24' : '#38bdf8');
+    beamGrad.addColorStop(1, 'rgba(56, 189, 248, 0.15)');
+
+    ctx.strokeStyle = beamGrad;
+    ctx.shadowColor = chordApproaching ? '#f59e0b' : '#38bdf8';
+    ctx.shadowBlur = chordApproaching ? 16 : 10;
+    ctx.lineWidth = chordApproaching ? 3.5 : 2.5;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.restore();
+
+    // Center PERFECT TARGET / STOP CHORD Timing Guide Badge
+    ctx.save();
+    const badgeText = isWaiting
+      ? '⏸️ TEKAN TUTS CHORD UNTUK LANJUT ⏸️'
+      : (chordApproaching ? '⚡ CHORD ZONE ⚡' : '◆ PERFECT ZONE ◆');
+    const badgeW = isWaiting ? 236 : (chordApproaching ? 140 : 126);
+    const badgeH = 18;
+    const badgeX = w / 2 - badgeW / 2;
+    const badgeY = y - badgeH / 2;
+    ctx.fillStyle = (isWaiting || chordApproaching) ? 'rgba(30, 20, 5, 0.96)' : 'rgba(10, 16, 28, 0.94)';
+    ctx.strokeStyle = (isWaiting || chordApproaching) ? '#fbbf24' : 'rgba(56, 189, 248, 0.7)';
+    ctx.lineWidth = 1.3;
+    roundRect(ctx, badgeX, badgeY, badgeW, badgeH, 5);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = (isWaiting || chordApproaching) ? '#fef08a' : '#e0f2fe';
+    ctx.font = 'bold 9px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText(badgeText, w / 2, y + 3.5);
+    ctx.restore();
+  }
+
+  // Unified Single-Color Theme for all Falling Tiles (clean, focused, elegant)
+  const UNIFIED_TILE = {
+    top: '#7dd3fc',
+    bottom: '#0284c7',
+    glow: '#38bdf8',
+    tail: 'rgba(56, 189, 248, 0.28)',
+    border: 'rgba(224, 242, 254, 0.85)',
+    label: '#ffffff'
+  };
+
+  function drawTiles(w, h) {
+    const laneW = w / laneCount;
+    const tileW = getTileWidth(laneW);
+    const now = currentTime;
+    const hitY = h * HIT_ZONE;
+    const topY = -40;
+    const distance = hitY - topY;
+
+    // Draw glowing horizontal chord bridges connecting simultaneous notes
+    const drawnChords = new Set();
+    for (const n of laneNotes) {
+      if (n.chordGroup && !drawnChords.has(n.chordGroup)) {
+        const untilHit = n.time - now;
+        if (untilHit <= TRAVEL_TIME && untilHit >= -0.25) {
+          drawnChords.add(n.chordGroup);
+          const progress = 1 - (untilHit / TRAVEL_TIME);
+          const bottomY = topY + progress * distance;
+          const barY = bottomY - 14;
+
+          const lanes = n.chordGroup.map(m => m.lane);
+          const minL = Math.min(...lanes);
+          const maxL = Math.max(...lanes);
+
+          if (maxL > minL) {
+            const x1 = minL * laneW + laneW / 2;
+            const x2 = maxL * laneW + laneW / 2;
+
+            const isBig = n.chordSize >= 4;
+            const isOcta = n.chordSize >= 8;
+
+            ctx.save();
+            ctx.strokeStyle = isOcta ? '#f43f5e' : (isBig ? '#fbbf24' : '#c084fc');
+            ctx.lineWidth = isBig ? 3.5 : 2.5;
+            ctx.shadowColor = isOcta ? '#f43f5e' : (isBig ? '#f59e0b' : '#a855f7');
+            ctx.shadowBlur = 14;
+
+            ctx.beginPath();
+            ctx.moveTo(x1, barY);
+            ctx.lineTo(x2, barY);
+            ctx.stroke();
+
+            // Chord Badge in center
+            const midX = (x1 + x2) / 2;
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = 'rgba(11, 15, 26, 0.94)';
+            ctx.strokeStyle = isOcta ? '#f43f5e' : (isBig ? '#fbbf24' : '#a855f7');
+            ctx.lineWidth = 1.4;
+            const badgeLabel = `${n.chordSize}x CHORD`;
+            const badgeW = 68;
+            roundRect(ctx, midX - badgeW / 2, barY - 9, badgeW, 18, 5);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = isOcta ? '#fecdd3' : (isBig ? '#fef08a' : '#f3e8ff');
+            ctx.font = 'bold 9px system-ui';
+            ctx.textAlign = 'center';
+            ctx.fillText(badgeLabel, midX, barY + 3.5);
+            ctx.restore();
+          }
+        }
+      }
+    }
+
+    for (const n of laneNotes) {
+      const untilHit = n.time - now;
+      if (untilHit > TRAVEL_TIME || untilHit < -n.duration - 0.3) continue;
+
+      const progress = 1 - (untilHit / TRAVEL_TIME);
+      const bottomY = topY + progress * distance;
+      const tileH = Math.max(24, (n.duration / TRAVEL_TIME) * distance);
+      const topTileY = bottomY - tileH;
+      const x = n.lane * laneW + (laneW - tileW) / 2;
+
+      const isPast = untilHit < 0;
+      const alpha = isPast ? 0.35 : 0.96;
+      ctx.globalAlpha = alpha;
+
+      // Draw long sustain tail if note is extended
+      if (tileH > 32) {
+        const tailW = Math.max(6, Math.min(tileW * 0.65, 30));
+        const tailX = x + (tileW - tailW) / 2;
+        const tailH = Math.max(4, tileH - 16);
+
+        ctx.fillStyle = UNIFIED_TILE.tail;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+        ctx.lineWidth = 1;
+        roundRect(ctx, tailX, topTileY, tailW, tailH, 4);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Draw Tile Head (at bottom of the falling tile)
+      const headH = Math.max(10, Math.min(tileH, 26));
+      const headY = bottomY - headH;
+      const grad = ctx.createLinearGradient(x, headY, x, bottomY);
+      grad.addColorStop(0, UNIFIED_TILE.top);
+      grad.addColorStop(1, UNIFIED_TILE.bottom);
+
+      ctx.fillStyle = grad;
+      ctx.shadowColor = UNIFIED_TILE.glow;
+      ctx.shadowBlur = isPast ? 0 : 10;
+      roundRect(ctx, x, headY, tileW, headH, 6);
+      ctx.fill();
+
+      // Crisp tile border for clear definition and separation
+      ctx.strokeStyle = UNIFIED_TILE.border;
+      ctx.lineWidth = 1.2;
+      roundRect(ctx, x, headY, tileW, headH, 6);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Note label
+      ctx.fillStyle = UNIFIED_TILE.label;
+      ctx.font = `bold ${Math.min(11, Math.max(8.5, tileW * 0.20))}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.shadowColor = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur = 3;
+      ctx.fillText(n.name || n.midi, x + tileW / 2, headY + headH / 2 + 3.5);
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1.0;
+  }
+
+  function drawParticles(w, h) {
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const p = particles[i];
+      p.x += p.vx * 0.016;
+      p.y += p.vy * 0.016;
+      p.life -= 0.024;
+      p.alpha = Math.max(0, p.life);
+
+      if (p.life <= 0) {
+        particles.splice(i, 1);
+        continue;
+      }
+
+      ctx.globalAlpha = p.alpha;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    for (let i = hitFlashes.length - 1; i >= 0; i--) {
+      hitFlashes[i].life -= 0.05;
+      if (hitFlashes[i].life <= 0) hitFlashes.splice(i, 1);
+    }
+    ctx.globalAlpha = 1.0;
+  }
+
+  // Bullet-proof rounded rectangle renderer (handles all canvas implementations safely)
+  function roundRect(c, x, y, w, h, r = 6) {
+    w = Math.max(1, Number(w) || 1);
+    h = Math.max(1, Number(h) || 1);
+    const radiusNum = Array.isArray(r) ? (r[2] || r[0] || 4) : (Number(r) || 0);
+    const clampedR = Math.max(0, Math.min(radiusNum, w / 2, h / 2));
+
+    c.beginPath();
+    if (typeof c.roundRect === 'function') {
+      try {
+        c.roundRect(x, y, w, h, r);
+        return;
+      } catch (e) {}
+    }
+
+    // Standard arc fallback
+    c.moveTo(x + clampedR, y);
+    c.lineTo(x + w - clampedR, y);
+    c.arc(x + w - clampedR, y + clampedR, clampedR, -Math.PI / 2, 0);
+    c.lineTo(x + w, y + h - clampedR);
+    c.arc(x + w - clampedR, y + h - clampedR, clampedR, 0, Math.PI / 2);
+    c.lineTo(x + clampedR, y + h);
+    c.arc(x + clampedR, y + h - clampedR, clampedR, Math.PI / 2, Math.PI);
+    c.lineTo(x, y + clampedR);
+    c.arc(x + clampedR, y + clampedR, clampedR, Math.PI, -Math.PI / 2);
+    c.closePath();
+  }
+  const drawCompatRoundRect = roundRect;
+
+  function checkAutoPlaySound() {
+    if (gameMode !== 'auto' && gameMode !== 'wait_chord' && mutedLanes.size === 0) return;
+    const windowSec = 0.05;
+    const chordNow = [];
+    for (const n of laneNotes) {
+      if (!n.playedSound && (currentTime >= n.time || Math.abs(currentTime - n.time) < windowSec)) {
+        // In wait_chord mode, chords wait for user tuts/space! Only single notes auto-play.
+        if (gameMode === 'wait_chord' && n.chordSize >= 2) continue;
+
+        n.playedSound = true;
+        chordNow.push(n);
+
+        // Play auto MIDI sound ONLY if this lane is NOT muted!
+        if (!mutedLanes.has(n.lane)) {
+          playNoteSound(n.midi, n.duration, n.velocity);
+        }
+        if (viewMode === 'roll') {
+          addRollHitEffect(n.midi, 'PERFECT');
+        } else {
+          addHitEffect(n.lane, 'PERFECT');
+          flashKeyBadge(n.lane);
+        }
+      }
+    }
+
+    // Auto-Play: Show chord indicator banner when 4 or more notes hit at once
+    if (chordNow.length >= 4) {
+      const avgX = (viewMode === 'roll')
+        ? chordNow.reduce((acc, n) => {
+            const g = rollKeyMap.get(n.midi);
+            return acc + (g ? g.x + g.w / 2 : canvas.clientWidth / 2);
+          }, 0) / chordNow.length
+        : chordNow.reduce((acc, n) => acc + (n.lane * (canvas.clientWidth / laneCount) + (canvas.clientWidth / laneCount) / 2), 0) / chordNow.length;
+
+      const label = chordNow.length >= 8 ? `🔥 OCTA CHORD (${chordNow.length}x)` : (chordNow.length >= 6 ? `⚡ MEGA CHORD (${chordNow.length}x)` : `🌟 QUAD CHORD (${chordNow.length}x)`);
+      const kbH = Math.min(160, Math.max(96, Math.round(canvas.clientHeight * 0.22)));
+      const judgeY = (viewMode === 'roll') ? (canvas.clientHeight - kbH - 24) : (canvas.clientHeight * HIT_ZONE - 18);
+      showFloatingJudge(avgX, judgeY, label, chordNow.length >= 8 ? 'megachord' : 'chord');
+    }
+  }
+
+  function checkWaitingMode() {
+    if (gameMode !== 'wait_chord' && gameMode !== 'wait_all') {
+      if (isWaitingHit) {
+        isWaitingHit = false;
+        waitingNotes = [];
+        updateWaitingKeyVisuals();
+      }
+      return;
+    }
+    if (isWaitingHit) return;
+
+    for (const n of laneNotes) {
+      if (!n.hit && !n.playedSound) {
+        if (currentTime >= n.time - 0.015) {
+          if (gameMode === 'wait_chord' && (!n.chordSize || n.chordSize < 2)) {
+            continue; // single note passes in wait_chord mode
+          }
+
+          isWaitingHit = true;
+          if (n.chordGroup && n.chordGroup.length >= 2) {
+            waitingNotes = n.chordGroup.filter(m => !m.hit);
+          } else {
+            waitingNotes = laneNotes.filter(m => !m.hit && Math.abs(m.time - n.time) <= 0.05);
+          }
+          if (!waitingNotes.length) {
+            isWaitingHit = false;
+            continue;
+          }
+
+          currentTime = n.time;
+          playStartOffset = currentTime;
+          playStartTime = performance.now();
+
+          if (viewMode === 'roll') {
+            const keyNames = waitingNotes.map(m => m.name || midiToNoteName(m.midi)).join(' + ');
+            setStatus(`⏸️ [STOP CHORD] Lagu berhenti! Tekan tuts [${keyNames}] atau Spacebar untuk lanjut.`);
+          } else {
+            const keys = KEY_MAPPINGS[laneCount] || [];
+            const keyNames = waitingNotes.map(m => keys[m.lane] || `${m.lane + 1}`).join(' + ');
+            setStatus(`⏸️ [STOP CHORD] Lagu berhenti! Tekan tuts [${keyNames}] atau Spacebar untuk lanjut.`);
+          }
+          updateWaitingKeyVisuals();
+          break;
+        }
+      }
+    }
+  }
+
+  function flashKeyBadge(laneIndex) {
+    const badge = document.getElementById(`key-badge-${laneIndex}`);
+    if (badge) {
+      badge.classList.add('active');
+      setTimeout(() => badge.classList.remove('active'), 120);
+    }
+  }
+
+  // Chord Slam: Hits all tiles currently at the hit line across all lanes/keys simultaneously!
+  function handleChordSlam() {
+    initAudio();
+
+    const kbH = Math.min(160, Math.max(96, Math.round(canvas.clientHeight * 0.22)));
+    const hitY = (viewMode === 'roll') ? (canvas.clientHeight - kbH) : (canvas.clientHeight * HIT_ZONE);
+
+    if (isWaitingHit && waitingNotes.length > 0) {
+      const count = waitingNotes.length;
+      waitingNotes.forEach(n => {
+        n.hit = true;
+        n.playedSound = true;
+        playNoteSound(n.midi, n.duration, n.velocity);
+        if (viewMode === 'roll') {
+          addRollHitEffect(n.midi, 'PERFECT');
+        } else {
+          addHitEffect(n.lane, 'PERFECT');
+          flashKeyBadge(n.lane);
+        }
+      });
+
+      const baseScore = 100 * count;
+      const multiplier = count >= 8 ? 4 : (count >= 6 ? 3 : (count >= 4 ? 2.5 : 1.5));
+      score += Math.round(baseScore * multiplier);
+      combo += count;
+      updateScoreDisplay();
+
+      const avgX = (viewMode === 'roll')
+        ? waitingNotes.reduce((acc, n) => {
+            const g = rollKeyMap.get(n.midi);
+            return acc + (g ? g.x + g.w / 2 : canvas.clientWidth / 2);
+          }, 0) / count
+        : waitingNotes.reduce((acc, n) => acc + (n.lane * (canvas.clientWidth / laneCount) + (canvas.clientWidth / laneCount) / 2), 0) / count;
+
+      const title = count >= 8 ? `🔥 OCTA CHORD! +${count}` : (count >= 4 ? `🌟 QUAD CHORD! +${count}` : `✨ ${count}x CHORD! +${count}`);
+      showFloatingJudge(avgX, hitY - 25, title, 'chord');
+
+      isWaitingHit = false;
+      waitingNotes = [];
+      updateWaitingKeyVisuals();
+      playStartOffset = currentTime;
+      playStartTime = performance.now();
+      setStatus('Akor berhasil dipukul (Chord Slam)! Lagu berlanjut…');
+      return;
+    }
+
+    const hitTolerance = 0.28; // seconds hit window
+    const hitNotes = [];
+    for (const n of laneNotes) {
+      if (!n.hit && Math.abs(currentTime - n.time) <= hitTolerance) {
+        hitNotes.push(n);
+      }
+    }
+
+    if (hitNotes.length > 0) {
+      hitNotes.forEach(n => { n.hit = true; n.playedSound = true; });
+
+      const count = hitNotes.length;
+      const baseScore = 100 * count;
+      const multiplier = count >= 8 ? 4 : (count >= 6 ? 3 : (count >= 4 ? 2.5 : (count >= 2 ? 1.5 : 1)));
+      const addedScore = Math.round(baseScore * multiplier);
+      score += addedScore;
+      combo += count;
+      updateScoreDisplay();
+
+      // Play all notes in chord polyphony
+      hitNotes.forEach(n => {
+        playNoteSound(n.midi, n.duration, n.velocity);
+        if (viewMode === 'roll') {
+          addRollHitEffect(n.midi, 'PERFECT');
+        } else {
+          addHitEffect(n.lane, 'PERFECT');
+          flashKeyBadge(n.lane);
+        }
+      });
+
+      let judgeText = 'PERFECT!';
+      let judgeType = 'perfect';
+      if (count >= 8) {
+        judgeText = `🔥 OCTA CHORD! +${count} COMBO`;
+        judgeType = 'megachord';
+      } else if (count >= 6) {
+        judgeText = `⚡ MEGA CHORD! +${count} COMBO`;
+        judgeType = 'megachord';
+      } else if (count >= 4) {
+        judgeText = `🌟 QUAD CHORD! +${count} COMBO`;
+        judgeType = 'chord';
+      } else if (count >= 2) {
+        judgeText = `✨ ${count}x CHORD! +${count} COMBO`;
+        judgeType = 'chord';
+      }
+
+      const avgX = (viewMode === 'roll')
+        ? hitNotes.reduce((acc, n) => {
+            const g = rollKeyMap.get(n.midi);
+            return acc + (g ? g.x + g.w / 2 : canvas.clientWidth / 2);
+          }, 0) / count
+        : hitNotes.reduce((acc, n) => acc + (n.lane * (canvas.clientWidth / laneCount) + (canvas.clientWidth / laneCount) / 2), 0) / count;
+
+      showFloatingJudge(avgX, hitY - 20, judgeText, judgeType);
+    } else {
+      if (gameMode === 'play') {
+        combo = 0;
+        updateScoreDisplay();
+        showFloatingJudge(canvas.clientWidth / 2, hitY - 20, 'MISS', 'miss');
+      }
+    }
+  }
+
+  // Mode 2 (Piano Roll) Input Handlers
+  function triggerRollKeyPress(midi) {
+    initAudio();
+    activeRollKeys.set(midi, performance.now() + 250);
+
+    const kbH = Math.min(160, Math.max(96, Math.round(canvas.clientHeight * 0.22)));
+    const hitY = canvas.clientHeight - kbH;
+
+    // If waiting on Chord in Stop Chord / Stop All mode:
+    if (isWaitingHit) {
+      const targetWaiting = waitingNotes.find(m => m.midi === midi && !m.hit);
+      if (targetWaiting) {
+        targetWaiting.hit = true;
+        targetWaiting.playedSound = true;
+        score += 100;
+        combo += 1;
+        updateScoreDisplay();
+        playNoteSound(targetWaiting.midi, targetWaiting.duration, targetWaiting.velocity);
+        addRollHitEffect(midi, 'PERFECT');
+
+        waitingNotes = waitingNotes.filter(m => !m.hit);
+        updateWaitingKeyVisuals();
+
+        if (waitingNotes.length === 0) {
+          isWaitingHit = false;
+          playStartOffset = currentTime;
+          playStartTime = performance.now();
+          showFloatingJudge(canvas.clientWidth / 2, hitY - 25, '✨ CHORD COMPLETE!', 'chord');
+          setStatus('Akor berhasil dipukul! Lagu berlanjut…');
+        } else {
+          const remKeys = waitingNotes.map(m => m.name || midiToNoteName(m.midi)).join(' + ');
+          setStatus(`Not akor ditekan! Tekan sisa [${remKeys}] untuk lanjut…`);
+        }
+        return;
+      } else {
+        playNoteSound(midi, 0.35, 0.7);
+        return;
+      }
+    }
+
+    // Interactive hit detection
+    let activeNote = null;
+    let minDiff = Infinity;
+    for (const n of laneNotes) {
+      if (n.midi === midi) {
+        const diff = Math.abs(currentTime - n.time);
+        if (diff < minDiff) {
+          minDiff = diff;
+          activeNote = n;
+        }
+      }
+    }
+
+    if (gameMode === 'play' || gameMode === 'wait_chord' || gameMode === 'wait_all') {
+      const hitTolerance = 0.28;
+      if (activeNote && minDiff <= hitTolerance && !activeNote.hit) {
+        activeNote.hit = true;
+        activeNote.playedSound = true;
+        const accuracy = minDiff < 0.08 ? 'PERFECT' : 'GREAT';
+        score += accuracy === 'PERFECT' ? 100 : 50;
+        combo += 1;
+        updateScoreDisplay();
+        playNoteSound(activeNote.midi, activeNote.duration, activeNote.velocity);
+        addRollHitEffect(midi, accuracy);
+        return;
+      }
+    }
+
+    // Free piano play sound
+    playNoteSound(midi, 0.35, 0.85);
+  }
+
+  function handleRollPointer(clickX, clickY) {
+    const kbH = Math.min(160, Math.max(96, Math.round(canvas.clientHeight * 0.22)));
+    const kbY = canvas.clientHeight - kbH;
+
+    if (clickY >= kbY) {
+      // 1. Check black keys first (they sit on top of white keys)
+      for (const [m, geom] of rollKeyMap.entries()) {
+        if (geom.isBlack) {
+          if (clickX >= geom.x && clickX <= geom.x + geom.w && clickY <= kbY + geom.h) {
+            triggerRollKeyPress(m);
+            return;
+          }
+        }
+      }
+
+      // 2. Check white keys
+      for (const [m, geom] of rollKeyMap.entries()) {
+        if (!geom.isBlack) {
+          if (clickX >= geom.x && clickX <= geom.x + geom.w) {
+            triggerRollKeyPress(m);
+            return;
+          }
+        }
+      }
+    } else {
+      if (Math.abs(clickY - kbY) < 40) {
+        handleChordSlam();
+      }
+    }
+  }
+
+  // Multi-key chord detection buffer
+  let recentChordHits = [];
+  let chordDebounceTimer = null;
+
+  function handleLaneInput(laneIndex) {
+    initAudio();
+    flashKeyBadge(laneIndex);
+
+    // If waiting on Chord in Stop Chord / Stop All mode:
+    if (isWaitingHit) {
+      const targetWaiting = waitingNotes.find(m => m.lane === laneIndex && !m.hit);
+      if (targetWaiting) {
+        targetWaiting.hit = true;
+        targetWaiting.playedSound = true;
+        score += 100;
+        combo += 1;
+        updateScoreDisplay();
+        playNoteSound(targetWaiting.midi, targetWaiting.duration, targetWaiting.velocity);
+        addHitEffect(laneIndex, 'PERFECT');
+
+        waitingNotes = waitingNotes.filter(m => !m.hit);
+        updateWaitingKeyVisuals();
+
+        if (waitingNotes.length === 0) {
+          isWaitingHit = false;
+          playStartOffset = currentTime;
+          playStartTime = performance.now();
+          showFloatingJudge(canvas.clientWidth / 2, canvas.clientHeight * HIT_ZONE - 25, '✨ CHORD COMPLETE!', 'chord');
+          setStatus('Akor berhasil dipukul! Lagu berlanjut…');
+        } else {
+          const keys = KEY_MAPPINGS[laneCount] || [];
+          const remKeys = waitingNotes.map(m => keys[m.lane] || `${m.lane + 1}`).join(' + ');
+          setStatus(`Not akor ditekan! Tekan sisa [${remKeys}] untuk lanjut…`);
+        }
+        return;
+      } else {
+        const target = laneDefaultNotes[laneIndex] || { midi: 60, duration: 0.3, velocity: 0.7 };
+        playNoteSound(target.midi, target.duration, target.velocity * 0.7);
+        return;
+      }
+    }
+
+    // Find the note in this lane closest to current playback time
+    let activeNote = null;
+    let minDiff = Infinity;
+
+    for (const n of laneNotes) {
+      if (n.lane === laneIndex) {
+        const diff = Math.abs(currentTime - n.time);
+        if (diff < minDiff) {
+          minDiff = diff;
+          activeNote = n;
+        }
+      }
+    }
+
+    if (gameMode === 'play' || gameMode === 'wait_chord' || gameMode === 'wait_all') {
+      const hitTolerance = 0.25;
+      if (activeNote && minDiff <= hitTolerance && !activeNote.hit) {
+        activeNote.hit = true;
+        activeNote.playedSound = true;
+        const accuracy = minDiff < 0.08 ? 'PERFECT' : 'GREAT';
+        score += accuracy === 'PERFECT' ? 100 : 50;
+        combo += 1;
+        updateScoreDisplay();
+        playNoteSound(activeNote.midi, activeNote.duration, activeNote.velocity);
+        addHitEffect(laneIndex, accuracy);
+
+        // Multi-key Chord Combo: Detect if player pressed multiple keys for simultaneous chord
+        recentChordHits.push(activeNote);
+        if (chordDebounceTimer) clearTimeout(chordDebounceTimer);
+        chordDebounceTimer = setTimeout(() => {
+          if (recentChordHits.length >= 2) {
+            const count = recentChordHits.length;
+            const chordBonus = count * 60;
+            score += chordBonus;
+            updateScoreDisplay();
+
+            const title = count >= 8 ? `🔥 OCTA CHORD! +${count}` : (count >= 4 ? `🌟 QUAD CHORD! +${count}` : `✨ ${count}x CHORD! +${count}`);
+            const avgX = recentChordHits.reduce((acc, n) => acc + (n.lane * (canvas.clientWidth / laneCount) + (canvas.clientWidth / laneCount) / 2), 0) / count;
+            showFloatingJudge(avgX, canvas.clientHeight * HIT_ZONE - 25, title, count >= 4 ? 'chord' : 'great');
+          }
+          recentChordHits = [];
+        }, 110);
+      } else {
+        if (gameMode === 'play') {
+          combo = 0;
+          updateScoreDisplay();
+          addHitEffect(laneIndex, 'MISS');
+        }
+        const target = (activeNote && minDiff <= 3.0) ? activeNote : (laneDefaultNotes[laneIndex] || { midi: 60, duration: 0.3, velocity: 0.6 });
+        playNoteSound(target.midi, target.duration, target.velocity * 0.7);
+      }
+    } else {
+      // In Auto-Play mode:
+      const target = (activeNote && minDiff <= 3.0) ? activeNote : (laneDefaultNotes[laneIndex] || { midi: 60, duration: 0.3, velocity: 0.8 });
+      playNoteSound(target.midi, target.duration, target.velocity);
+      addHitEffect(laneIndex, 'PERFECT');
+    }
+  }
+
+  // Animation Loop with Real-time Clock Sync
+  function loop() {
+    if (playing) {
+      if (isWaitingHit) {
+        playStartTime = performance.now();
+      } else {
+        const elapsed = (performance.now() - playStartTime) / 1000;
+        currentTime = playStartOffset + elapsed * speed;
+
+        checkWaitingMode();
+        checkAutoPlaySound();
+
+        if (currentTime >= duration) {
+          currentTime = duration;
+          playing = false;
+          playBtn.textContent = '▶ Play';
+          setStatus('Lagu selesai! Klik ↺ Reset untuk mengulang.');
+        }
+      }
+    }
+
+    timeEl.textContent = `${fmtTime(currentTime)} / ${fmtTime(duration)}`;
+    if (duration > 0) {
+      const pct = Math.min(100, Math.max(0, (currentTime / duration) * 100));
+      timelineProgress.style.width = `${pct}%`;
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  timeline.addEventListener('click', e => {
+    if (duration <= 0) return;
+    const rect = timeline.getBoundingClientRect();
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekTo(pos * duration);
+  });
+
+  function seekTo(sec) {
+    currentTime = Math.max(0, Math.min(duration, sec));
+    playStartOffset = currentTime;
+    playStartTime = performance.now();
+    isWaitingHit = false;
+    waitingNotes = [];
+    updateWaitingKeyVisuals();
+
+    laneNotes.forEach(n => {
+      n.playedSound = n.time < currentTime;
+      if (n.time >= currentTime) n.hit = false;
+    });
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  }
+
+  fileInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) loadMidi(file);
+  });
+
+  demoBtn.addEventListener('click', () => {
+    initAudio();
+    loadDemoSong();
+  });
+
+  dropDemoBtn.addEventListener('click', () => {
+    initAudio();
+    loadDemoSong();
+  });
+
+  playBtn.addEventListener('click', () => {
+    initAudio();
+    if (!rawNotes.length) return;
+    if (currentTime >= duration) seekTo(0);
+    playing = !playing;
+    if (playing) {
+      playStartTime = performance.now();
+      playStartOffset = currentTime;
+    }
+    playBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
+    setStatus(playing ? 'Memutar preview tile…' : 'Jeda (Paused)');
+  });
+
+  resetBtn.addEventListener('click', () => {
+    seekTo(0);
+    playing = false;
+    isWaitingHit = false;
+    waitingNotes = [];
+    updateWaitingKeyVisuals();
+    playBtn.textContent = '▶ Play';
+    score = 0;
+    combo = 0;
+    updateScoreDisplay();
+    setStatus('Posisi waktu di-reset ke 0:00.');
+  });
+
+  speedInput.addEventListener('input', () => {
+    speed = Number(speedInput.value);
+    speedValue.textContent = speed.toFixed(2) + '×';
+    if (playing) {
+      playStartOffset = currentTime;
+      playStartTime = performance.now();
+    }
+  });
+
+  // Mode 1 vs Mode 2 Switcher
+  function setViewMode(mode) {
+    viewMode = mode;
+    if (viewTilesBtn) viewTilesBtn.classList.toggle('active', mode === 'tiles');
+    if (viewRollBtn) viewRollBtn.classList.toggle('active', mode === 'roll');
+
+    if (mode === 'tiles') {
+      laneKeysContainer.style.display = 'flex';
+      lanesControlGroup.style.display = 'flex';
+      tileWidthControlGroup.style.display = 'flex';
+      pianoRangeControlGroup.style.display = 'none';
+      if (chordHintEl) {
+        chordHintEl.innerHTML = (gameMode === 'wait_chord')
+          ? '⏸️ <b>Mode Stop Chord</b>: Tekan Tuts Akor / Spacebar untuk Lanjut'
+          : '⚡ <b>Spacebar / Enter / Hit Line</b>: CHORD SLAM (4-8 Lanes)';
+      }
+      setStatus('Mode 1: Piano Tiles (Rhythm Game) aktif.');
+    } else {
+      laneKeysContainer.style.display = 'none';
+      lanesControlGroup.style.display = 'none';
+      tileWidthControlGroup.style.display = 'none';
+      pianoRangeControlGroup.style.display = 'flex';
+      updatePianoRollLayout();
+      if (chordHintEl) {
+        chordHintEl.innerHTML = (gameMode === 'wait_chord')
+          ? '⏸️ <b>Mode Stop Chord</b>: Tekan Tuts Piano Emas / Spacebar untuk Lanjut'
+          : '⚡ <b>Keyboard [A-;] / Klik Tuts Piano</b>: Synthesia Piano Roll';
+      }
+      setStatus('Mode 2: Real Piano Roll (Synthesia Keyboard) aktif.');
+    }
+    resize();
+    draw();
+  }
+
+  if (viewTilesBtn) {
+    viewTilesBtn.addEventListener('click', () => {
+      initAudio();
+      setViewMode('tiles');
+    });
+  }
+
+  if (viewRollBtn) {
+    viewRollBtn.addEventListener('click', () => {
+      initAudio();
+      setViewMode('roll');
+    });
+  }
+
+  if (pianoRangeSelect) {
+    pianoRangeSelect.addEventListener('change', () => {
+      pianoRangePreset = pianoRangeSelect.value;
+      updatePianoRollLayout();
+      const labels = {
+        auto: 'Sesuai Lagu (Auto)',
+        88: 'Full 88 Keys (Grand Piano)',
+        61: '61 Keys (5 Oktaf)',
+        49: '49 Keys (4 Oktaf)'
+      };
+      setStatus(`Rentang tuts piano diubah ke: ${labels[pianoRangePreset] || pianoRangePreset}`);
+      draw();
+    });
+  }
+
+  lanesSelect.addEventListener('change', buildLanes);
+
+  if (tileWidthSelect) {
+    tileWidthSelect.addEventListener('change', () => {
+      tileWidthPreset = tileWidthSelect.value;
+      const names = {
+        slim: 'Ramping (Slim)',
+        compact: 'Sangat Ramping',
+        medium: 'Sedang',
+        full: 'Penuh (Full)'
+      };
+      setStatus(`Lebar tile diubah ke: ${names[tileWidthPreset] || tileWidthPreset}`);
+    });
+  }
+
+  gameModeSelect.addEventListener('change', () => {
+    gameMode = gameModeSelect.value;
+    const isInteractive = gameMode !== 'auto';
+    gameHud.style.display = isInteractive ? 'flex' : 'none';
+    if (chordHintEl) chordHintEl.style.display = isInteractive ? 'block' : 'none';
+
+    isWaitingHit = false;
+    waitingNotes = [];
+    updateWaitingKeyVisuals();
+    if (playing) {
+      playStartOffset = currentTime;
+      playStartTime = performance.now();
+    }
+
+    if (gameMode === 'wait_chord') {
+      setStatus('⏸️ Mode Stop Chord aktif! Lagu berhenti di setiap akor sampai tuts/Space ditekan.');
+    } else if (gameMode === 'wait_all') {
+      setStatus('⏸️ Mode Stop All Notes aktif! Lagu menunggu setiap not ditekan satu per satu.');
+    } else if (gameMode === 'play') {
+      setStatus('Mode Interaktif aktif! Tekan tuts atau Spacebar/Enter untuk Chord.');
+    } else {
+      setStatus('Mode Auto-Play aktif.');
+    }
+  });
+
+  autoMutePresetSelect.addEventListener('change', () => {
+    applyMutePreset(autoMutePresetSelect.value);
+  });
+
+  if (chordSlamBtn) {
+    chordSlamBtn.addEventListener('click', () => {
+      initAudio();
+      handleChordSlam();
+    });
+  }
+
+  soundTypeSelect.addEventListener('change', () => {
+    soundType = soundTypeSelect.value;
+    initAudio();
+  });
+
+  soundBtn.addEventListener('click', () => {
+    initAudio();
+    soundEnabled = !soundEnabled;
+    soundBtn.textContent = soundEnabled ? '🔊' : '🔇';
+    if (masterGain && audioCtx) {
+      masterGain.gain.setValueAtTime(soundEnabled ? currentVolume : 0, audioCtx.currentTime);
+    }
+  });
+
+  volumeInput.addEventListener('input', () => {
+    initAudio();
+    currentVolume = Number(volumeInput.value);
+    if (soundEnabled && masterGain && audioCtx) {
+      masterGain.gain.setValueAtTime(currentVolume, audioCtx.currentTime);
+    }
+  });
+
+  exportBtn.addEventListener('click', () => {
+    if (!laneNotes.length) return;
+    const chartData = {
+      title: songName.textContent,
+      bpm: bpm,
+      duration: duration,
+      laneCount: laneCount,
+      travelTime: TRAVEL_TIME,
+      hitZoneRatio: HIT_ZONE,
+      totalTiles: laneNotes.length,
+      tiles: laneNotes.map(n => ({
+        id: n.id,
+        lane: n.lane,
+        time: Number(n.time.toFixed(3)),
+        duration: Number(n.duration.toFixed(3)),
+        midi: n.midi,
+        name: n.name,
+        velocity: Number(n.velocity.toFixed(2))
+      }))
+    };
+
+    const blob = new Blob([JSON.stringify(chartData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${songName.textContent.toLowerCase().replace(/\s+/g, '_')}_tiles.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setStatus('Berhasil mengekspor data tile ke file JSON!');
+  });
+
+  window.addEventListener('keydown', e => {
+    // Spacebar or Enter
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      if ((gameMode === 'play' || gameMode === 'wait_chord' || gameMode === 'wait_all') && playing) {
+        // Chord Slam in interactive / waiting modes!
+        handleChordSlam();
+      } else {
+        // Toggle play / pause
+        if (!playBtn.disabled) playBtn.click();
+      }
+      return;
+    }
+
+    if (e.code === 'Escape') {
+      if (playing && !playBtn.disabled) playBtn.click();
+      return;
+    }
+
+    if (viewMode === 'roll') {
+      const ROLL_KEY_MAP = {
+        'KeyA': 60, // C4
+        'KeyW': 61, // C#4
+        'KeyS': 62, // D4
+        'KeyE': 63, // D#4
+        'KeyD': 64, // E4
+        'KeyF': 65, // F4
+        'KeyT': 66, // F#4
+        'KeyG': 67, // G4
+        'KeyY': 68, // G#4
+        'KeyH': 69, // A4
+        'KeyU': 70, // A#4
+        'KeyJ': 71, // B4
+        'KeyK': 72, // C5
+        'KeyO': 73, // C#5
+        'KeyL': 74, // D5
+        'KeyP': 75, // D#5
+        'Semicolon': 76 // E5
+      };
+      if (ROLL_KEY_MAP[e.code]) {
+        e.preventDefault();
+        triggerRollKeyPress(ROLL_KEY_MAP[e.code]);
+        return;
+      }
+    }
+
+    const key = e.key.toUpperCase();
+    const activeMap = KEY_MAPPINGS[laneCount] || [];
+
+    let targetLane = activeMap.indexOf(key);
+    if (targetLane === -1 && laneCount === 8) {
+      targetLane = KEY_ALIASES_8.indexOf(key);
+      if (targetLane === -1) {
+        const homeRow = ['A', 'S', 'D', 'F', 'J', 'K', 'L', ';'];
+        targetLane = homeRow.indexOf(key);
+      }
+    }
+
+    if (targetLane !== -1) {
+      e.preventDefault();
+      handleLaneInput(targetLane);
+    }
+  });
+
+  canvas.addEventListener('pointerdown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    if (viewMode === 'roll') {
+      handleRollPointer(clickX, clickY);
+      return;
+    }
+
+    const hitY = rect.height * HIT_ZONE;
+
+    // Tapping on or near the hit zone line in interactive or wait modes triggers Chord Slam!
+    if ((gameMode === 'play' || gameMode === 'wait_chord' || gameMode === 'wait_all') && Math.abs(clickY - hitY) < 36) {
+      handleChordSlam();
+      return;
+    }
+
+    const laneW = rect.width / laneCount;
+    const laneIndex = Math.min(laneCount - 1, Math.max(0, Math.floor(clickX / laneW)));
+    handleLaneInput(laneIndex);
+  });
+
+  window.addEventListener('dragover', e => {
+    e.preventDefault();
+    drop.style.opacity = '1';
+    setStatus('Lepaskan file MIDI di sini…');
+  });
+
+  window.addEventListener('dragleave', e => {
+    if (e.clientX === 0 || e.clientY === 0) {
+      drop.style.opacity = '0.7';
+    }
+  });
+
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.style.opacity = '0.7';
+    const file = [...e.dataTransfer.files].find(f => /\.(mid|midi)$/i.test(f.name));
+    if (file) {
+      loadMidi(file);
+    } else {
+      setStatus('File bukan berformat .mid atau .midi.');
+    }
+  });
+
+  requestAnimationFrame(loop);
+  renderLaneKeyBadges();
+  const isInteractiveInit = gameMode !== 'auto';
+  gameHud.style.display = isInteractiveInit ? 'flex' : 'none';
+  if (chordHintEl) {
+    chordHintEl.style.display = isInteractiveInit ? 'block' : 'none';
+    if (gameMode === 'wait_chord') {
+      chordHintEl.innerHTML = '⏸️ <b>Mode Stop Chord</b>: Tekan Tuts Akor / Spacebar untuk Lanjut';
+    }
+  }
+})();
+</script>
+</body>
+</html>
