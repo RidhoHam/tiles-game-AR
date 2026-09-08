@@ -198,17 +198,19 @@ export function calculateTwoHandSpan(leftHand, rightHand) {
     return null;
   }
 
-  const leftPt = leftHand.indexTip;
-  const rightPt = rightHand.indexTip;
+  // Ensure consistent left/right ordering based on X coordinate
+  const [hL, hR] = leftHand.indexTip.x <= rightHand.indexTip.x ? [leftHand, rightHand] : [rightHand, leftHand];
+  const leftPt = hL.indexTip;
+  const rightPt = hR.indexTip;
 
   const width = Math.abs(rightPt.x - leftPt.x);
   const centerX = (leftPt.x + rightPt.x) / 2;
   const centerY = (leftPt.y + rightPt.y) / 2;
   const centerZ = (leftPt.z + rightPt.z) / 2;
 
-  const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
-  const leftCam = leftHand.cameraIndexTip || null;
-  const rightCam = rightHand.cameraIndexTip || null;
+  const bothPinching = Boolean(hL.isPinching && hR.isPinching);
+  const leftCam = hL.cameraIndexTip || null;
+  const rightCam = hR.cameraIndexTip || null;
   const cameraWidth = (leftCam && rightCam) ? Math.abs(rightCam.x - leftCam.x) : null;
 
   return {
@@ -515,7 +517,24 @@ export class HandTracker {
 
     const smoothedHands = [];
 
-    for (const raw of rawHandStates) {
+    // Ensure 2-hand stability: sort by X so left hand (smaller X) is always 'Left' and right hand is always 'Right'
+    let sortedRaw = [...rawHandStates];
+    if (sortedRaw.length === 2) {
+      sortedRaw.sort((a, b) => (a.indexTip?.x ?? 0) - (b.indexTip?.x ?? 0));
+      sortedRaw[0].handedness = 'Left';
+      sortedRaw[1].handedness = 'Right';
+    } else if (sortedRaw.length === 1 && this.previousHandsByHandedness.size === 2) {
+      const single = sortedRaw[0];
+      const prevLeft = this.previousHandsByHandedness.get('Left');
+      const prevRight = this.previousHandsByHandedness.get('Right');
+      if (prevLeft && prevRight && single.indexTip) {
+        const dLeft = Math.hypot(single.indexTip.x - prevLeft.indexTip.x, single.indexTip.y - prevLeft.indexTip.y);
+        const dRight = Math.hypot(single.indexTip.x - prevRight.indexTip.x, single.indexTip.y - prevRight.indexTip.y);
+        single.handedness = dLeft < dRight ? 'Left' : 'Right';
+      }
+    }
+
+    for (const raw of sortedRaw) {
       const prev = this.previousHandsByHandedness.get(raw.handedness);
       let smoothedHand;
 
@@ -541,8 +560,15 @@ export class HandTracker {
         const vy = dt > 0 ? (smoothedIndex.y - prev.indexTip.y) / dt : 0;
         const vz = dt > 0 ? (smoothedIndex.z - prev.indexTip.z) / dt : 0;
 
+        // Re-evaluate pinch using smoothed camera coordinates for jitter-free pinch state
+        const pinchEval = (smoothedCamIndex && smoothedCamThumb)
+          ? detectPinch({ indexTip: smoothedCamIndex, thumbTip: smoothedCamThumb })
+          : { isPinching: raw.isPinching, distance: raw.pinchDistance };
+
         smoothedHand = {
           ...raw,
+          isPinching: pinchEval.isPinching,
+          pinchDistance: pinchEval.distance,
           indexTip: smoothedIndex,
           thumbTip: smoothedThumb,
           middleTip: smoothedMiddle,

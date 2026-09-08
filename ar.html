@@ -1002,18 +1002,34 @@
         resizeGesture();
       }
 
-      // Check WebXR availability
-      if (navigator.xr && navigator.xr.isSessionSupported) {
-        const supported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-        if (supported) {
-          const btn = document.getElementById('btn-place-arena');
-          if (btn) btn.innerHTML = '<span>🥽 Start WebXR AR</span>';
-        }
-      }
-
       setupDOMEventHandlers();
       setupTouchLaneFallback();
       startMainRenderLoop();
+    }
+
+    function confirmAndOpenSongMenu() {
+      try {
+        soundEngine.init().then(() => {
+          soundEngine.playFeedback('PERFECT');
+        }).catch(() => {});
+      } catch (e) {}
+
+      arScene.confirmPlacement();
+
+      // Ensure scan banner is hidden and song modal is displayed immediately
+      const scanBanner = document.getElementById('scan-banner');
+      if (scanBanner) scanBanner.classList.add('hidden');
+      const songModal = document.getElementById('song-modal');
+      if (songModal) songModal.classList.remove('hidden');
+
+      if (arUI && arUI.stateMachine) {
+        if (arUI.stateMachine.getState() === UI_STATES.SCAN_SURFACE) {
+          arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+        } else {
+          arUI.stateMachine.state = UI_STATES.SELECT_SONG_MODE;
+          arUI.updateUIForState(UI_STATES.SELECT_SONG_MODE);
+        }
+      }
     }
 
     function setupDOMEventHandlers() {
@@ -1021,29 +1037,17 @@
       const btnPlace = document.getElementById('btn-place-arena');
       const btnSkip = document.getElementById('btn-skip-placement');
 
-      btnPlace?.addEventListener('click', async () => {
-        await soundEngine.init();
-        if (navigator.xr && navigator.xr.isSessionSupported) {
-          const supported = await navigator.xr.isSessionSupported('immersive-ar').catch(() => false);
-          if (supported && !arScene.xrSession) {
-            try {
-              const session = await navigator.xr.requestSession('immersive-ar', {
-                requiredFeatures: ['hit-test', 'local-floor']
-              });
-              await arScene.setupWebXRSession(session);
-            } catch (e) {
-              console.warn('WebXR requestSession fallback:', e);
-            }
-          }
-        }
-        arScene.confirmPlacement();
-        arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+      btnPlace?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        confirmAndOpenSongMenu();
       });
 
-      btnSkip?.addEventListener('click', async () => {
-        await soundEngine.init();
+      btnSkip?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
         arScene.placeArena({ x: 0, y: -0.3, z: -1.2 });
-        arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+        confirmAndOpenSongMenu();
       });
 
       // Mode Selector Pills
@@ -1245,43 +1249,47 @@
     function drawGestureOverlay(ctx, hands, width, height, state, span, arenaWidth, laneCount, lockProgress = 0) {
       ctx.clearRect(0, 0, width, height);
       const time = performance.now();
+      const videoEl = arScene?.videoElement;
 
-      // Retrieve screen canvas coordinates for a hand's index tip
-      function getHandPoint(hand) {
-        if (!hand) return null;
-        let nx = 0.5, ny = 0.5;
-        if (hand.cameraIndexTip) {
-          nx = hand.cameraIndexTip.x;
-          ny = hand.cameraIndexTip.y;
-        } else if (hand.indexTip) {
-          nx = hand.indexTip.x / 0.8 + 0.5;
-          ny = 0.5 - hand.indexTip.y / 0.6;
-        }
-        return {
-          x: Math.max(20, Math.min(width - 20, nx * width)),
-          y: Math.max(20, Math.min(height - 20, ny * height)),
-          nx,
-          ny
-        };
-      }
+      // Project normalized camera coordinates (or fallback arena coordinates) to exact screen pixels
+      function getScreenPoint(camPt, fallbackPt) {
+        const vw = (videoEl && videoEl.videoWidth) ? videoEl.videoWidth : 640;
+        const vh = (videoEl && videoEl.videoHeight) ? videoEl.videoHeight : 480;
+        const videoAspect = vw / vh;
+        const screenAspect = width / height;
 
-      // Retrieve screen canvas coordinates for a hand's thumb tip
-      function getThumbPoint(hand) {
-        if (!hand) return null;
-        let nx = 0.5, ny = 0.5;
-        if (hand.cameraThumbTip) {
-          nx = hand.cameraThumbTip.x;
-          ny = hand.cameraThumbTip.y;
-        } else if (hand.thumbTip) {
-          nx = hand.thumbTip.x / 0.8 + 0.5;
-          ny = 0.5 - hand.thumbTip.y / 0.6;
+        let renderW, renderH, offsetX, offsetY;
+        if (screenAspect > videoAspect) {
+          renderW = width;
+          renderH = width / videoAspect;
+          offsetX = 0;
+          offsetY = (height - renderH) / 2;
+        } else {
+          renderH = height;
+          renderW = height * videoAspect;
+          offsetX = (width - renderW) / 2;
+          offsetY = 0;
         }
-        return {
-          x: Math.max(20, Math.min(width - 20, nx * width)),
-          y: Math.max(20, Math.min(height - 20, ny * height)),
-          nx,
-          ny
-        };
+
+        if (camPt && typeof camPt.x === 'number' && typeof camPt.y === 'number') {
+          const sx = offsetX + camPt.x * renderW;
+          const sy = offsetY + camPt.y * renderH;
+          return {
+            x: Math.max(15, Math.min(width - 15, sx)),
+            y: Math.max(15, Math.min(height - 15, sy))
+          };
+        }
+
+        if (fallbackPt && typeof fallbackPt.x === 'number') {
+          const nx = fallbackPt.x / 0.8 + 0.5;
+          const ny = 0.5 - fallbackPt.y / 0.6;
+          return {
+            x: Math.max(15, Math.min(width - 15, nx * width)),
+            y: Math.max(15, Math.min(height - 15, ny * height))
+          };
+        }
+
+        return null;
       }
 
       // Helper to draw corner brackets [ ]
@@ -1327,20 +1335,27 @@
 
       // 1. STATE: SCAN_SURFACE (Table surface detection & 2-hand pinch/stretch)
       if (state === UI_STATES.SCAN_SURFACE) {
-        if (hands && hands.length === 2) {
-          const leftHand = hands.find(h => h.handedness === 'Left') || hands[0];
-          const rightHand = hands.find(h => h.handedness === 'Right') || hands[1];
+        if (hands && hands.length >= 2) {
+          // Guaranteed Left/Right spatial ordering: smaller X is left side, larger X is right side
+          const sortedHands = [...hands].sort((a, b) => {
+            const ax = a.cameraIndexTip?.x ?? a.indexTip?.x ?? 0;
+            const bx = b.cameraIndexTip?.x ?? b.indexTip?.x ?? 0;
+            return ax - bx;
+          });
 
-          const lPt = getHandPoint(leftHand);
-          const rPt = getHandPoint(rightHand);
-          const lThumb = getThumbPoint(leftHand);
-          const rThumb = getThumbPoint(rightHand);
+          const leftHand = sortedHands[0];
+          const rightHand = sortedHands[1];
 
-          if (lPt && rPt) {
-            const minX = Math.min(lPt.x, rPt.x) - 20;
-            const maxX = Math.max(lPt.x, rPt.x) + 20;
+          const lIndexPt = getScreenPoint(leftHand.cameraIndexTip, leftHand.indexTip);
+          const lThumbPt = getScreenPoint(leftHand.cameraThumbTip, leftHand.thumbTip);
+          const rIndexPt = getScreenPoint(rightHand.cameraIndexTip, rightHand.indexTip);
+          const rThumbPt = getScreenPoint(rightHand.cameraThumbTip, rightHand.thumbTip);
+
+          if (lIndexPt && rIndexPt) {
+            const minX = Math.min(lIndexPt.x, rIndexPt.x) - 20;
+            const maxX = Math.max(lIndexPt.x, rIndexPt.x) + 20;
             const spanWidthPx = Math.max(160, maxX - minX);
-            const midY = (lPt.y + rPt.y) / 2;
+            const midY = (lIndexPt.y + rIndexPt.y) / 2;
 
             // Perspective table box coordinates (trapezoid receding into screen)
             const deskHeight = Math.max(130, spanWidthPx * 0.42);
@@ -1427,23 +1442,22 @@
             ctx.setLineDash([8, 6]);
             ctx.lineDashOffset = -time / 20;
             ctx.beginPath();
-            ctx.moveTo(lPt.x, lPt.y);
-            ctx.lineTo(rPt.x, rPt.y);
+            ctx.moveTo(lIndexPt.x, lIndexPt.y);
+            ctx.lineTo(rIndexPt.x, rIndexPt.y);
             ctx.stroke();
             ctx.restore();
 
-            // 1g. Floating Centimeter & Hands-Free Lock Badge
+            // 1g. Floating Hands-Free Lock Badge
             const badgeCenterX = (p1.x + p2.x) / 2;
             const badgeY = Math.max(38, topY - 32);
-            const widthCm = Math.round((arenaWidth || 0.8) * 100);
 
             ctx.save();
             const badgeText = lockProgress > 0
-              ? `🔒 MENGUNCI ARENA: ${widthCm} cm (${Math.round(lockProgress * 100)}%)`
-              : `📏 LEBAR ARENA: ${widthCm} cm`;
+              ? `🔒 MENGUNCI ARENA (${Math.round(lockProgress * 100)}%)`
+              : `✨ ARENA MUSIK MEJA`;
             ctx.font = 'bold 15px "Outfit", system-ui, sans-serif';
             const metrics = ctx.measureText(badgeText);
-            const badgeW = Math.max(220, metrics.width + 38);
+            const badgeW = Math.max(200, metrics.width + 36);
             const badgeH = 36;
 
             ctx.fillStyle = 'rgba(11, 15, 25, 0.92)';
@@ -1519,71 +1533,116 @@
               ctx.restore();
             }
 
-            // 1h. Visual Pinch Cues & Badges on Fingertips
-            const drawPinchIndicator = (pt, thumbPt, hand, color, label) => {
+            // 1h. Visual Indicators for Index, Thumb, and Pinch for Each Hand
+            const drawHandIndicators = (hand, indexPt, thumbPt, accentColor, sideLabel) => {
+              if (!indexPt) return;
               ctx.save();
+
+              // 1. Index Fingertip
               ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 14, 0, Math.PI * 2);
-              ctx.fillStyle = color;
-              ctx.shadowColor = color;
-              ctx.shadowBlur = 14;
+              ctx.arc(indexPt.x, indexPt.y, 11, 0, Math.PI * 2);
+              ctx.fillStyle = accentColor;
+              ctx.shadowColor = accentColor;
+              ctx.shadowBlur = 12;
               ctx.fill();
 
               ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 5, 0, Math.PI * 2);
+              ctx.arc(indexPt.x, indexPt.y, 4, 0, Math.PI * 2);
               ctx.fillStyle = '#ffffff';
               ctx.fill();
 
-              if (hand.isPinching && thumbPt) {
+              // 2. Thumb Tip
+              if (thumbPt) {
                 ctx.beginPath();
-                ctx.arc(thumbPt.x, thumbPt.y, 10, 0, Math.PI * 2);
-                ctx.fillStyle = '#facc15';
-                ctx.shadowColor = '#facc15';
-                ctx.shadowBlur = 12;
+                ctx.arc(thumbPt.x, thumbPt.y, 9, 0, Math.PI * 2);
+                ctx.fillStyle = accentColor;
+                ctx.shadowColor = accentColor;
+                ctx.shadowBlur = 10;
                 ctx.fill();
 
-                ctx.strokeStyle = '#facc15';
-                ctx.lineWidth = 3;
                 ctx.beginPath();
-                ctx.moveTo(pt.x, pt.y);
+                ctx.arc(thumbPt.x, thumbPt.y, 3, 0, Math.PI * 2);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+
+                // 3. Line connecting Thumb and Index
+                ctx.beginPath();
+                ctx.moveTo(indexPt.x, indexPt.y);
                 ctx.lineTo(thumbPt.x, thumbPt.y);
-                ctx.stroke();
 
-                const bx = pt.x + (hand.handedness === 'Left' ? -55 : 20);
-                const by = pt.y - 24;
-                ctx.fillStyle = 'rgba(250, 204, 21, 0.95)';
-                ctx.beginPath();
-                if (ctx.roundRect) {
-                  ctx.roundRect(bx, by - 12, 72, 22, 6);
+                if (hand.isPinching) {
+                  // Bright golden beam when pinched
+                  ctx.strokeStyle = '#facc15';
+                  ctx.lineWidth = 4;
+                  ctx.shadowColor = '#facc15';
+                  ctx.shadowBlur = 16;
+                  ctx.stroke();
+
+                  // Golden pinch glow at midpoint
+                  const midX = (indexPt.x + thumbPt.x) / 2;
+                  const midY = (indexPt.y + thumbPt.y) / 2;
+
+                  ctx.beginPath();
+                  ctx.arc(midX, midY, 12, 0, Math.PI * 2);
+                  ctx.fillStyle = '#facc15';
+                  ctx.shadowColor = '#facc15';
+                  ctx.shadowBlur = 18;
+                  ctx.fill();
+
+                  // Crisp "PINCH" badge centered right above the pinch point
+                  const badgeW = 66;
+                  const badgeH = 22;
+                  const bx = midX - badgeW / 2;
+                  const by = midY - 26;
+
+                  ctx.fillStyle = 'rgba(250, 204, 21, 0.95)';
+                  ctx.shadowBlur = 8;
+                  ctx.beginPath();
+                  if (ctx.roundRect) {
+                    ctx.roundRect(bx, by, badgeW, badgeH, 6);
+                  } else {
+                    ctx.rect(bx, by, badgeW, badgeH);
+                  }
+                  ctx.fill();
+
+                  ctx.shadowBlur = 0;
+                  ctx.fillStyle = '#0f172a';
+                  ctx.font = 'bold 11px "Outfit", sans-serif';
+                  ctx.textAlign = 'center';
+                  ctx.textBaseline = 'middle';
+                  ctx.fillText('👌 PINCH', midX, by + badgeH / 2);
                 } else {
-                  ctx.rect(bx, by - 12, 72, 22);
+                  // Dashed guide line when open
+                  ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+                  ctx.lineWidth = 1.5;
+                  ctx.setLineDash([4, 4]);
+                  ctx.stroke();
                 }
-                ctx.fill();
-                ctx.fillStyle = '#0f172a';
-                ctx.font = 'bold 11px "Outfit", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText('👌 PINCH', bx + 36, by + 1);
-              } else {
-                ctx.fillStyle = color;
-                ctx.font = 'bold 12px "Inter", sans-serif';
-                ctx.textAlign = 'center';
-                ctx.fillText(label, pt.x, pt.y - 18);
               }
+
+              // 4. Side Label
+              ctx.shadowBlur = 0;
+              ctx.setLineDash([]);
+              ctx.fillStyle = accentColor;
+              ctx.font = 'bold 12px "Inter", sans-serif';
+              ctx.textAlign = 'center';
+              ctx.fillText(sideLabel, indexPt.x, indexPt.y - 18);
+
               ctx.restore();
             };
 
-            drawPinchIndicator(lPt, lThumb, leftHand, '#ec4899', '🖐️ Kiri (Bass)');
-            drawPinchIndicator(rPt, rThumb, rightHand, '#06b6d4', '🖐️ Kanan (Melodi)');
+            drawHandIndicators(leftHand, lIndexPt, lThumbPt, '#ec4899', '🖐️ Kiri');
+            drawHandIndicators(rightHand, rIndexPt, rThumbPt, '#06b6d4', '🖐️ Kanan');
 
             // 1i. Floating Bottom Action Guidance
             ctx.save();
             let subMsg = '';
             if (lockProgress > 0) {
-              subMsg = '🔒 TAHAN POSISI SEBENTAR... Otomatis mengunci arena meja!';
+              subMsg = '🔒 TAHAN POSISI SEBENTAR... Mengunci arena meja!';
             } else if (bothPinching) {
-              subMsg = '👌 Cubit & geser untuk atur • Diamkan 1.2s atau Lepas Cubitan untuk KUNCI!';
+              subMsg = '👌 Cubit & geser untuk atur • Diamkan 1 detik atau Lepas Cubitan untuk KUNCI!';
             } else {
-              subMsg = '✨ Diamkan tangan 1.2 detik di posisi meja untuk KUNCI otomatis (Hands-Free)!';
+              subMsg = '✨ Diamkan tangan 1 detik di posisi meja untuk KUNCI otomatis!';
             }
             ctx.font = '600 13px "Inter", sans-serif';
             const subMetrics = ctx.measureText(subMsg);
@@ -1612,7 +1671,7 @@
         } else if (hands && hands.length === 1) {
           // 1 Hand detected
           const hand = hands[0];
-          const pt = getHandPoint(hand);
+          const pt = getScreenPoint(hand.cameraIndexTip, hand.indexTip);
           if (pt) {
             const isLeft = hand.handedness === 'Left';
             const color = isLeft ? '#ec4899' : '#06b6d4';
@@ -1673,6 +1732,7 @@
           ctx.lineTo(p4.x, p4.y);
           ctx.closePath();
           ctx.fill();
+          ctx.restore();
 
           ctx.strokeStyle = 'rgba(56, 189, 248, 0.6)';
           ctx.lineWidth = 2;
@@ -1709,7 +1769,7 @@
       // 2. STATE: PLAYING (Fingertip targets and ripples)
       if (state === UI_STATES.PLAYING && hands && hands.length > 0) {
         for (const hand of hands) {
-          const pt = getHandPoint(hand);
+          const pt = getScreenPoint(hand.cameraIndexTip, hand.indexTip);
           if (!pt) continue;
 
           const isLeft = hand.handedness === 'Left';
@@ -1761,9 +1821,9 @@
       let lastFpsTime = performance.now();
 
       // Hands-Free Lock State (Zero-friction confirmation without mouse/touch)
-      let lockHoldStartTime = null;
+      let dwellStartTime = null;
+      let dwellAnchorWidth = null;
       let lockProgress = 0;
-      let lastSteadyWidth = null;
       let wasPinchingBoth = false;
       let unpinchLockStartTime = null;
 
@@ -1801,81 +1861,86 @@
         // Handle SCAN_SURFACE state: 2-Hand Pinch & Stretch Gesture for table placement
         let currentSpan = null;
         if (currentState === UI_STATES.SCAN_SURFACE) {
-          if (cachedHands.length === 2) {
-            const leftHand = cachedHands.find(h => h.handedness === 'Left');
-            const rightHand = cachedHands.find(h => h.handedness === 'Right');
-            if (leftHand && rightHand) {
-              currentSpan = calculateTwoHandSpan(leftHand, rightHand);
-              if (currentSpan && currentSpan.width >= 0.20) {
-                const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
+          if (cachedHands.length >= 2) {
+            // Ensure stable spatial sorting: left hand has smaller X, right hand has larger X
+            const sortedHands = [...cachedHands].sort((a, b) => {
+              const ax = a.cameraIndexTip?.x ?? a.indexTip?.x ?? 0;
+              const bx = b.cameraIndexTip?.x ?? b.indexTip?.x ?? 0;
+              return ax - bx;
+            });
+            const leftHand = sortedHands[0];
+            const rightHand = sortedHands[1];
 
-                // Option B: Unpinch trigger (releasing pinch immediately triggers quick lock)
-                if (wasPinchingBoth && !bothPinching && !unpinchLockStartTime) {
-                  unpinchLockStartTime = timestamp;
+            currentSpan = calculateTwoHandSpan(leftHand, rightHand);
+            if (currentSpan && currentSpan.width >= 0.18) {
+              const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
+
+              // Gesture Trigger 1: Unpinch trigger (releasing pinch triggers quick lock)
+              if (wasPinchingBoth && !bothPinching && !unpinchLockStartTime) {
+                unpinchLockStartTime = timestamp;
+              }
+              wasPinchingBoth = bothPinching;
+
+              if (unpinchLockStartTime) {
+                // Freeze arena width and run quick confirmation lock
+                const unpinchElapsed = timestamp - unpinchLockStartTime;
+                lockProgress = Math.min(1.0, unpinchElapsed / 500);
+                if (lockProgress >= 0.90) {
+                  confirmAndOpenSongMenu();
+                  unpinchLockStartTime = null;
+                  dwellStartTime = null;
+                  dwellAnchorWidth = null;
+                  lockProgress = 0;
                 }
-                wasPinchingBoth = bothPinching;
+              } else {
+                // Normal sizing mode
+                arScene.updatePinchPlacement(currentSpan);
+                hitDetector.arenaWidth = arScene.arenaWidth;
 
-                if (unpinchLockStartTime) {
-                  // Freeze arena width and run quick 600ms confirmation lock
-                  const unpinchElapsed = timestamp - unpinchLockStartTime;
-                  lockProgress = Math.min(1.0, unpinchElapsed / 600);
-                  if (lockProgress >= 1.0) {
-                    soundEngine.init().then(() => soundEngine.playFeedback('PERFECT'));
-                    arScene.confirmPlacement();
-                    arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+                // Gesture Trigger 2: Steady Dwell Lock (Hold hands still at desk for 1.0 second)
+                if (dwellAnchorWidth === null) {
+                  dwellAnchorWidth = currentSpan.width;
+                  dwellStartTime = timestamp;
+                }
+
+                const moveFromAnchor = Math.abs(currentSpan.width - dwellAnchorWidth);
+                if (moveFromAnchor < 0.045) { // 4.5cm tolerance against initial anchor
+                  const holdElapsed = timestamp - dwellStartTime;
+                  lockProgress = Math.min(1.0, holdElapsed / 1000); // 1.0s steady hold
+
+                  if (lockProgress >= 0.90) {
+                    confirmAndOpenSongMenu();
+                    dwellStartTime = null;
+                    dwellAnchorWidth = null;
                     unpinchLockStartTime = null;
-                    lockHoldStartTime = null;
                     lockProgress = 0;
-                    return;
                   }
                 } else {
-                  // Normal sizing mode
-                  arScene.updatePinchPlacement(currentSpan);
-                  hitDetector.arenaWidth = arScene.arenaWidth;
-
-                  // Option A: Steady Dwell Lock (Hold hands still at desk for 1.2 seconds)
-                  const widthDelta = lastSteadyWidth !== null ? Math.abs(currentSpan.width - lastSteadyWidth) : 1.0;
-                  const isSteady = widthDelta < 0.018; // < 1.8cm movement
-                  lastSteadyWidth = currentSpan.width;
-
-                  if (isSteady) {
-                    if (!lockHoldStartTime) {
-                      lockHoldStartTime = timestamp;
-                    }
-                    const holdElapsed = timestamp - lockHoldStartTime;
-                    lockProgress = Math.min(1.0, holdElapsed / 1200); // 1.2s steady hold
-
-                    if (lockProgress >= 1.0) {
-                      soundEngine.init().then(() => soundEngine.playFeedback('PERFECT'));
-                      arScene.confirmPlacement();
-                      arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
-                      lockHoldStartTime = null;
-                      lockProgress = 0;
-                      return;
-                    }
-                  } else {
-                    lockHoldStartTime = null;
-                    lockProgress = 0;
-                  }
+                  // Repositioned hands: reset anchor
+                  dwellAnchorWidth = currentSpan.width;
+                  dwellStartTime = timestamp;
+                  lockProgress = 0;
                 }
+              }
 
-                const scanInst = document.getElementById('scan-instructions');
-                if (scanInst) {
-                  if (lockProgress > 0) {
-                    scanInst.innerHTML = `<span style="color: #facc15; font-weight: 700;">🔒 Mengunci Otomatis: ${Math.round(lockProgress * 100)}%</span> (Tahan posisi sejenak...)`;
-                  } else {
-                    scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur 2 Tangan:</span> Lebar Meja: <b>${(arScene.arenaWidth * 100).toFixed(0)} cm</b> ${bothPinching ? '👌 (Pinch)' : ''}<br>👉 <b>Diamkan 1.2s</b> atau <b>Lepas Cubitan</b> untuk KUNCI otomatis tanpa sentuh layar!`;
-                  }
+              const scanInst = document.getElementById('scan-instructions');
+              if (scanInst) {
+                if (lockProgress > 0) {
+                  scanInst.innerHTML = `<span style="color: #facc15; font-weight: 700;">🔒 Mengunci Posisi: ${Math.round(lockProgress * 100)}%</span> (Tahan posisi sejenak...)`;
+                } else {
+                  scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur Meja:</span> Rentangkan kedua tangan sesuai lebar meja ${bothPinching ? '👌 (Pinch)' : ''}<br>👉 <b>Diamkan 1 detik</b> atau <b>Lepas Cubitan</b> untuk mengunci posisi!`;
                 }
               }
             }
           } else {
-            lockHoldStartTime = null;
+            dwellStartTime = null;
+            dwellAnchorWidth = null;
             unpinchLockStartTime = null;
             lockProgress = 0;
           }
         } else {
-          lockHoldStartTime = null;
+          dwellStartTime = null;
+          dwellAnchorWidth = null;
           unpinchLockStartTime = null;
           lockProgress = 0;
         }
