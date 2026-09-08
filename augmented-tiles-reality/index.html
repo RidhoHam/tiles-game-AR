@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AR Piano Tiles — MIDI to Tile Preview & Player</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎹</text></svg>">
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="brand">
+      <h1>AR Piano Tiles</h1>
+      <div class="sub">MIDI to Falling Tiles Player</div>
+    </div>
+
+    <!-- Dual Mode Switcher Tabs -->
+    <div class="view-mode-tabs" id="viewModeTabs">
+      <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Piano Tiles (Rhythm lanes)">🎮 Tiles</button>
+      <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano Roll (Tuts piano asli & falling notes Synthesia)">🎹 Real Piano</button>
+    </div>
+
+    <!-- Web AR 3D Mode Launch Badge -->
+    <a href="ar.html" class="ar-mode-badge" id="arModeBadge" title="Launch 3D Web AR Mode with Hand Tracking">
+      🥽 AR Mode (Play in Space)
+    </a>
+
+    <div class="controls">
+      <label class="file-btn">
+        📂 Open MIDI
+        <input id="midiFile" type="file" accept=".mid,.midi,audio/midi" />
+      </label>
+      <button id="demoBtn">🎵 Demo</button>
+      <button id="playBtn" class="primary" disabled>▶ Play</button>
+      <button id="resetBtn" disabled>↺ Reset</button>
+
+      <span class="control-group">
+        Mode
+        <select id="gameMode" title="Pilih mode: Auto-Play, Interaktif biasa, atau Stop Chord (lagu berhenti di setiap akor sampai ditekan)">
+          <option value="auto">Auto-Play</option>
+          <option value="play">Interactive</option>
+          <option value="wait_chord" selected>⏸️ Stop Chord (Wait)</option>
+          <option value="wait_all">⏸️ Stop All Notes (Wait)</option>
+        </select>
+      </span>
+
+      <!-- Mode 1 (Tiles): Lanes Selection -->
+      <span class="control-group" id="lanesControlGroup">
+        Lanes
+        <select id="lanes">
+          <option value="4">4 lanes</option>
+          <option value="6">6 lanes</option>
+          <option value="8" selected>8 lanes</option>
+          <option value="12">12 lanes</option>
+        </select>
+      </span>
+
+      <!-- Mode 1 (Tiles): Tile Width Selection -->
+      <span class="control-group" id="tileWidthControlGroup">
+        Tile
+        <select id="tileWidthSelect" title="Pilih lebar tile: Ramping (Slim), Sangat Ramping, Sedang, atau Penuh">
+          <option value="slim" selected>Ramping (Slim)</option>
+          <option value="compact">Sangat Ramping</option>
+          <option value="medium">Sedang</option>
+          <option value="full">Penuh (Full)</option>
+        </select>
+      </span>
+
+      <!-- Mode 2 (Roll): Piano Range Selection -->
+      <span class="control-group" id="pianoRangeControlGroup" style="display: none;">
+        Keyboard
+        <select id="pianoRangeSelect" title="Pilih rentang tuts piano: Sesuai Lagu (Auto-Fit), 88 Keys Lengkap, atau 61 Keys">
+          <option value="auto" selected>🎵 Sesuai Lagu (Auto)</option>
+          <option value="88">🎹 Full 88 Keys</option>
+          <option value="61">🎼 61 Keys (C2-C7)</option>
+          <option value="49">🎶 49 Keys (C3-C7)</option>
+        </select>
+      </span>
+
+      <span class="control-group">
+        Speed
+        <input id="speed" class="speed-range" type="range" min="0.25" max="2.5" value="1.0" step="0.05" />
+        <b id="speedValue" style="min-width: 38px;">1.00×</b>
+      </span>
+
+      <span class="control-group">
+        Auto MIDI
+        <select id="autoMutePreset" title="Pilih jalur mana yang di-mute dari suara otomatis agar hanya tuts ketikan Anda yang bersuara">
+          <option value="none" selected>Auto All</option>
+          <option value="right">Mute Right/Melody</option>
+          <option value="left">Mute Left/Bass</option>
+          <option value="all">Mute All (Tuts Only)</option>
+        </select>
+      </span>
+
+      <span class="control-group">
+        Sound
+        <select id="soundType">
+          <option value="strudel" selected>🎹 Strudel Grand (Studio Samples)</option>
+          <option value="piano">✨ Acoustic Synth</option>
+          <option value="bright">⚡ Bright Rhodes</option>
+          <option value="synth">🔔 Synth Bell</option>
+        </select>
+        <button id="soundBtn" title="Toggle Sound" style="padding: 7px 9px;">🔊</button>
+        <input id="volume" class="vol-range" type="range" min="0" max="1" value="0.75" step="0.05" />
+      </span>
+
+      <button id="exportBtn" title="Export Tile Chart as JSON" disabled>📥 Export JSON</button>
+    </div>
+  </header>
+
+  <!-- Interactive Timeline Progress Bar -->
+  <div id="timeline">
+    <div id="timeline-progress">
+      <div id="timeline-handle"></div>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+
+    <!-- Heads Up Display -->
+    <div id="hud">
+      <div class="hud-left">
+        <div class="card"><div class="label">Song</div><div class="value" id="songName">—</div></div>
+        <div class="card"><div class="label">BPM</div><div class="value" id="bpm">—</div></div>
+        <div class="card"><div class="label">Tiles</div><div class="value" id="noteCount">—</div></div>
+        <div class="card"><div class="label">Time</div><div class="value" id="time">0:00 / 0:00</div></div>
+      </div>
+      <div class="hud-right" id="gameHud" style="display: none;">
+        <button id="chordSlamBtn" class="chord-slam-hud-btn" title="Tekan Spacebar / Enter atau klik tombol ini untuk memukul semua not chord bersamaan (4-8 lanes)!">⚡ SLAM CHORD [Space]</button>
+        <div class="card score-card"><div class="label">Score</div><div class="value" id="scoreVal">0</div></div>
+        <div class="card score-card"><div class="label">Combo</div><div class="value" id="comboVal">0</div></div>
+      </div>
+    </div>
+
+    <!-- Key badges shown over lanes -->
+    <div id="lane-keys"></div>
+
+    <!-- Drag & Drop overlay -->
+    <div id="drop">
+      <div class="message">
+        <strong>Pilih atau Drag & Drop File MIDI Di Sini</strong>
+        File MIDI akan otomatis di-parse langsung di browser.<br>
+        Not-not musik dikonversi menjadi falling tiles dengan audio synthesizer.<br><br>
+        <button id="dropDemoBtn" class="primary">▶ Putar Demo Lagu (Canon in D)</button>
+      </div>
+    </div>
+
+    <div id="status">Silakan pilih file MIDI atau klik Demo…</div>
+    <div id="chord-hint" style="display: none;">⚡ <b>Spacebar / Enter / Hit Line</b>: CHORD SLAM (4-8 Lanes)</div>
+  </div>
+</div>
+
+<!-- Tone.js MIDI Library for full-spec SMF parsing -->
+<script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

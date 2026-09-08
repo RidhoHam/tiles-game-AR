@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>AR Piano Tiles — Play the Song in Space</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/ar.css">
+</head>
+<body>
+  <!-- Three.js 3D Viewport Container -->
+  <div id=ar-container></div>
+
+  <!-- 2D Spatial Gesture Overlay Canvas for Holographic Table Grid & Pinch Animation -->
+  <canvas id=gesture-canvas></canvas>
+
+  <!-- Live Performance & Hand Status Badge -->
+  <div id=perf-badge>
+    <span id=fps-badge-dot></span>
+    <span id=fps-display>60 FPS</span>
+    <span style=opacity: 0.35;>|</span>
+    <span id=hands-display>??? 0 Tangan</span>
+  </div>
+
+  <!-- Surface Scan / Placement Banner -->
+  <div id=scan-banner class=glass-card>
+    <h2>🖐️ Letakkan 2 Tangan di Meja untuk Atur Kanvas Piano</h2>
+    <p id=scan-instructions>
+      Rentangkan 2 tangan di meja untuk menyesuaikan kanvas, atau cubit 1 sudut untuk fine-tuning. Tahan tangan diam 3 detik untuk Kunci, atau klik tombol di bawah.
+    </p>
+    <div style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; justify-content: center;">
+      <button id="btn-place-arena" class="action-btn">
+        <span>🔒 Kunci Posisi Meja</span>
+      </button>
+      <button id="btn-skip-placement" class="action-btn secondary">
+        <span>Gunakan Posisi Standar</span>
+      </button>
+      <button id="btn-scan-mirror" class="action-btn secondary" title="Balik Tampilan Kamera (Cermin)">
+        <span>🔄 Cermin: ON</span>
+      </button>
+      <button id="btn-scan-direction" class="action-btn secondary" title="Balik Arah Alur Tuts Jatuh">
+        <span id="scan-direction-text">⬇️ Alur: Atas ke Bawah</span>
+      </button>
+      <a href="index.html" class="action-btn secondary" style="text-decoration: none; padding: 10px 14px;" title="Kembali ke Mode 2D">
+        <span>🎮 2D Mode</span>
+      </a>
+    </div>
+  </div>
+
+  <!-- Song & Mode Select Modal -->
+  <div id=song-modal class=modal-backdrop>
+    <div class=modal-box glass-card>
+      <div class=modal-header>
+        <h3 class=modal-title>AR Piano Arena</h3>
+        <span class=modal-badge>Web AR 3D</span>
+      </div>
+
+      <!-- Dual Mode Switcher Tabs (Mirroring 2D Player: Tiles vs Real Piano) -->
+      <div class="view-mode-tabs" id="viewModeTabs">
+        <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Piano Tiles (Rhythm lanes falling to hit line)">🎮 Tiles</button>
+        <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano (Tuts piano asli 3D & falling notes Synthesia)">🎹 Real Piano</button>
+      </div>
+
+      <!-- Song Selector -->
+      <div class=song-list>
+        <div class=song-item selected data-song-id=demo_canon>
+          <div class=song-item-info>
+            <h4>Canon in D</h4>
+            <p>Johann Pachelbel � 100 BPM � Classical</p>
+          </div>
+          <span class=song-item-tag>Built-in</span>
+        </div>
+
+        <div class=song-item data-song-id=demo_twinkle>
+          <div class=song-item-info>
+            <h4>Twinkle Twinkle Little Star</h4>
+            <p>Traditional � 100 BPM � Easy Chords</p>
+          </div>
+          <span class=song-item-tag>Built-in</span>
+        </div>
+      </div>
+
+      <!-- File Import Section -->
+      <label class=action-btn secondary style=justify-content: center; width: 100%;>
+        <span>?? Import JSON / MIDI File</span>
+        <input type=file id=song-file-input accept=.json,.mid,.midi style=display: none; />
+      </label>
+
+      <!-- Navigation & Start -->
+      <div style=display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;>
+        <button id=btn-direct-play class=action-btn style=width: 100%; justify-content: center; font-size: 15px; background: linear-gradient(135deg, #059669, #10b981); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);>
+          ?? Mulai Main Sekarang (Play Now)
+        </button>
+        <button id=btn-start-calibration class=action-btn secondary style=flex: 1; justify-content: center; font-size: 12px;>
+          Kalibrasi Tangan
+        </button>
+        <a href=index.html class=action-btn secondary id=btn-back-2d style=flex: 1; text-decoration: none; justify-content: center; font-size: 12px;>
+          ? Mode 2D
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calibration Guide Modal -->
+  <div id=calib-modal class=modal-backdrop hidden>
+    <div class=modal-box glass-card style=text-align: center;>
+      <h3 class=modal-title>Hand Reach Calibration</h3>
+      <p style=font-size: 13px; color: var(--text-muted);>
+        Raise your hand in front of camera to auto-calibrate comfortable lane spacing and depth.
+      </p>
+
+      <div class=calib-guide-box>
+        <div class=calib-hand-icon>?</div>
+        <p id=calib-status-text style=font-size: 12px; color: #38bdf8; font-weight: 600;>
+          Hold hand steady inside frame... (0%)
+        </p>
+      </div>
+
+      <div style=display: flex; gap: 8px;>
+        <button id=btn-skip-calib class=action-btn secondary style=flex: 1; justify-content: center;>
+          Skip
+        </button>
+        <button id=btn-confirm-calib class=action-btn style=flex: 1; justify-content: center;>
+          Confirm & Play
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gameplay HUD Layer -->
+  <div id=hud-layer class=hidden>
+    <div class=hud-top-bar>
+      <div class=hud-score-card glass-card>
+        <span class=hud-label>Score</span>
+        <span id=hud-score class=hud-score-value>0</span>
+      </div>
+
+      <div class=hud-timeline-container glass-card style=padding: 8px 14px;>
+        <div class=timeline-info>
+          <span id=hud-song-title>Canon in D</span>
+          <span id=time-elapsed>0:00 / 0:00</span>
+        </div>
+        <div class=timeline-bar>
+          <div id=timeline-progress class=timeline-fill></div>
+        </div>
+      </div>
+
+      <div class=hud-actions>
+        <span id="hud-mode-badge" class="hud-badge-pill">🎮 Tiles</span>
+        <span id="hud-slam-badge" class="hud-badge-pill slam-pill" title="Ayunkan Jempol ke Bawah atau Tekan Space untuk Chord Slam!">⚡ THUMB SLAM [Space]</span>
+        <button id="btn-hud-mirror" class="icon-btn" title="Toggle Mirror Kamera">🔄</button>
+        <button id="btn-hud-direction" class="icon-btn" title="Toggle Arah Alur Tuts (Bawah ⬆ Atas / Atas ⬇ Bawah)">⬆️</button>
+        <button id=btn-mute class=icon-btn title=Toggle Sound>🔊</button>
+        <button id=btn-exit class=icon-btn title=Exit to Menu>✕</button>
+      </div>
+    </div>
+
+    <!-- Center Combo Display -->
+    <div id=hud-combo-container class=hidden>
+      <div id=hud-combo>0</div>
+      <div class=combo-sub>Combo</div>
+    </div>
+
+    <!-- Bottom Accuracy Pill -->
+    <div style=align-self: center; margin-bottom: 12px;>
+      <div class=glass-card style=padding: 6px 14px; font-size: 12px; font-weight: 700;>
+        Accuracy: <span id=hud-accuracy style=color: #38bdf8;>100.0%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Judgement Badges Container -->
+  <div id=judgement-layer></div>
+
+  <!-- Countdown Overlay -->
+  <div id=countdown-overlay class=hidden>
+    <div id=countdown-number class=countdown-num>3</div>
+  </div>
+
+  <!-- Result Modal -->
+  <div id=result-modal class=modal-backdrop hidden>
+    <div class=modal-box glass-card style=text-align: center;>
+      <div id=result-rank class=result-rank-circle>A</div>
+      <h3 class=modal-title style=margin-top: 4px;>Performance Summary</h3>
+
+      <div id=result-punchline class=punchline-banner>
+        You built 95% of the song in space!
+      </div>
+
+      <div class=stats-grid>
+        <div class=stat-card>
+          <span class=hud-label>Final Score</span>
+          <span id=result-score class=val>94,200</span>
+        </div>
+        <div class=stat-card>
+          <span class=hud-label>Accuracy</span>
+          <span id=result-accuracy class=val>95.0%</span>
+        </div>
+        <div class=stat-card>
+          <span class=hud-label>Max Combo</span>
+          <span id=result-max-combo class=val>48</span>
+        </div>
+        <div class=stat-card>
+          <span class=hud-label>Chord Acc</span>
+          <span id=result-chord-accuracy class=val>100%</span>
+        </div>
+        <div class=stat-card>
+          <span class=hud-label>Perfect</span>
+          <span id=result-perfect class=val style=color: #facc15;>42</span>
+        </div>
+        <div class=stat-card>
+          <span class=hud-label>Good / Miss</span>
+          <span class=val>
+            <span id=result-good style=color: #38bdf8;>6</span> /
+            <span id=result-miss style=color: #ef4444;>2</span>
+          </span>
+        </div>
+      </div>
+
+      <div style=display: flex; gap: 8px; margin-top: 6px;>
+        <button id=btn-result-songs class=action-btn secondary style=flex: 1; justify-content: center;>
+          Select Song
+        </button>
+        <button id=btn-result-replay class=action-btn style=flex: 2; justify-content: center;>
+          Play Again ?
+        </button>
+      </div>
+      <a href=index.html class=action-btn secondary style=text-decoration: none; justify-content: center; width: 100%; margin-top: 4px;>
+        ? Back to 2D Mode
+      </a>
+    </div>
+  </div>
+
+  <!-- Custom In-Game Glass Toast Notification (Replaces Browser native alert) -->
+  <div id="ar-toast" class="ar-toast hidden"></div>
+
+  <!-- Tone.js MIDI Library for full-spec SMF parsing in AR -->
+  <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
+  <script type=module src=/src/ar-main.js></script>
+</body>
+</html>
