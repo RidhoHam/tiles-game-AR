@@ -6,6 +6,8 @@ import {
   extractKeypoints,
   classifyHandedness,
   mapToArenaSpace,
+  detectPinch,
+  calculateTwoHandSpan,
   LANDMARK_INDICES
 } from '../src/vision/handTracker.js';
 
@@ -262,4 +264,49 @@ test('HandTracker handles simultaneous 2-hand detection (Left and Right)', () =>
   assert.equal(rightHand.indexTip.x, 0.24);  // (0.8 - 0.5) * 0.8
   assert.equal(leftHand.confidence, 0.96);
   assert.equal(rightHand.confidence, 0.98);
+});
+
+test('detectPinch accurately determines if thumb and index tips are pinched', () => {
+  // Pinched: tips are very close (< 0.08 normalized distance)
+  const pinchedHand = {
+    thumbTip: { x: 0.5, y: 0.5, z: 0.0 },
+    indexTip: { x: 0.52, y: 0.51, z: 0.0 }
+  };
+  const res1 = detectPinch(pinchedHand);
+  assert.equal(res1.isPinching, true);
+  assert.ok(res1.distance < 0.08);
+
+  // Open: tips are far apart (> 0.08)
+  const openHand = {
+    thumbTip: { x: 0.3, y: 0.5, z: 0.0 },
+    indexTip: { x: 0.5, y: 0.3, z: 0.0 }
+  };
+  const res2 = detectPinch(openHand);
+  assert.equal(res2.isPinching, false);
+  assert.ok(res2.distance > 0.08);
+
+  // Null/missing safety
+  assert.equal(detectPinch(null).isPinching, false);
+});
+
+test('calculateTwoHandSpan computes arena width and center point between two hands', () => {
+  const leftHand = {
+    handedness: 'Left',
+    indexTip: { x: -0.4, y: -0.2, z: -1.0 },
+    thumbTip: { x: -0.38, y: -0.21, z: -1.0 },
+    isPinching: true
+  };
+  const rightHand = {
+    handedness: 'Right',
+    indexTip: { x: 0.4, y: -0.2, z: -1.0 },
+    thumbTip: { x: 0.38, y: -0.21, z: -1.0 },
+    isPinching: true
+  };
+
+  const span = calculateTwoHandSpan(leftHand, rightHand);
+  assert.ok(span);
+  assert.equal(span.width, 0.8);
+  assert.equal(span.centerX, 0.0);
+  assert.equal(span.centerY, -0.2);
+  assert.equal(span.bothPinching, true);
 });

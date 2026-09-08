@@ -598,19 +598,29 @@
   <!-- Three.js 3D Viewport Container -->
   <div id="ar-container"></div>
 
+  <!-- Live Performance & Hand Status Badge -->
+  <div id="perf-badge" style="position: fixed; top: 18px; right: 18px; z-index: 60; font-family: 'Outfit', monospace; font-size: 11px; background: rgba(13, 17, 27, 0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 6px 12px; color: #38bdf8; display: flex; align-items: center; gap: 8px; pointer-events: none; box-shadow: 0 4px 14px rgba(0,0,0,0.4);">
+    <span id="fps-badge-dot" style="width: 8px; height: 8px; border-radius: 50%; background: #22c55e; display: inline-block;"></span>
+    <span id="fps-display">60 FPS</span>
+    <span style="opacity: 0.35;">|</span>
+    <span id="hands-display">🖐️ 0 Tangan</span>
+  </div>
+
   <!-- Surface Scan / Placement Banner -->
   <div id="scan-banner" class="glass-card">
-    <h2>Surface Detection Ready</h2>
-    <p id="scan-instructions">Aim your camera at a flat table or floor</p>
-    <div style="display: flex; gap: 8px; margin-top: 4px;">
+    <h2>✨ Area Meja Siap Ditempati</h2>
+    <p id="scan-instructions">
+      Arahkan kamera ke meja. Anda bisa cubit (pinch) & lebarkan kedua tangan untuk mengatur ukuran arena di meja, atau klik tombol di bawah.
+    </p>
+    <div style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; justify-content: center;">
       <button id="btn-place-arena" class="action-btn">
-        <span>✨ Anchor Arena Here</span>
+        <span>✨ Kunci Arena di Meja Ini</span>
       </button>
       <button id="btn-skip-placement" class="action-btn secondary">
-        <span>Use Default Pose</span>
+        <span>Gunakan Posisi Standar</span>
       </button>
-      <a href="index.html" class="action-btn secondary" style="text-decoration: none; padding: 10px 14px;" title="Back to 2D Mode">
-        <span>← 2D</span>
+      <a href="index.html" class="action-btn secondary" style="text-decoration: none; padding: 10px 14px;" title="Kembali ke Mode 2D">
+        <span>← 2D Mode</span>
       </a>
     </div>
   </div>
@@ -806,7 +816,7 @@
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
     import { ARScene } from './src/ar/arScene.js';
-    import { HandTracker } from './src/vision/handTracker.js';
+    import { HandTracker, calculateTwoHandSpan, detectPinch } from './src/vision/handTracker.js';
     import { HitDetector } from './src/engine/hitDetector.js';
     import { SoundEngine } from './src/audio/soundEngine.js';
     import { parseSongChart, convertTilesJsonToChart } from './src/engine/songParser.js';
@@ -1136,13 +1146,19 @@
     }
 
     function setupTouchLaneFallback() {
-      // Tap on screen fallback: raycasts or maps screen touch X to lane index
+      // Tap on screen fallback: In SCAN_SURFACE, tap anchors arena on desk; In PLAYING, tap plays notes
       const container = document.getElementById('ar-container');
       container?.addEventListener('pointerdown', (e) => {
+        if (arUI.stateMachine.getState() === UI_STATES.SCAN_SURFACE) {
+          soundEngine.init();
+          arScene.confirmPlacement();
+          arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+          return;
+        }
+
         if (!isPlaying || !currentChart) return;
         const rect = container.getBoundingClientRect();
         const normX = (e.clientX - rect.left) / rect.width;
-        const lane = Math.floor(normX * selectedLanes);
 
         const currentTimeSec = (performance.now() / 1000) - songStartTimeSec;
         const mockPrev = { x: (normX - 0.5) * hitDetector.arenaWidth, y: 0, z: -0.05 };
@@ -1169,40 +1185,84 @@
 
     function startMainRenderLoop() {
       let lastTime = performance.now();
+      let lastVisionTimestamp = 0;
+      let cachedHands = [];
+      const VISION_THROTTLE_MS = 32; // ~30 FPS vision tracking ensures 60 FPS Three.js rendering
+      let frameCount = 0;
+      let lastFpsTime = performance.now();
 
       const onFrame = (timestamp, xrFrame) => {
         const dt = Math.min(0.1, (timestamp - lastTime) / 1000);
         lastTime = timestamp;
 
+        // 0. Live Performance & Diagnostic Monitor
+        frameCount++;
+        if (timestamp - lastFpsTime >= 500) {
+          const fps = Math.round((frameCount * 1000) / (timestamp - lastFpsTime));
+          const fpsEl = document.getElementById('fps-display');
+          const handsEl = document.getElementById('hands-display');
+          const dotEl = document.getElementById('fps-badge-dot');
+          if (fpsEl) fpsEl.innerText = `${fps} FPS`;
+          if (handsEl) handsEl.innerText = `🖐️ ${cachedHands.length} Tangan`;
+          if (dotEl) dotEl.style.background = fps >= 45 ? '#22c55e' : (fps >= 25 ? '#facc15' : '#ef4444');
+          frameCount = 0;
+          lastFpsTime = timestamp;
+        }
+
         const currentState = arUI.stateMachine.getState();
 
-        // 1. Vision Hand Tracking
-        if (handTracker && arScene.videoElement) {
-          const hands = handTracker.detectForVideo(arScene.videoElement, timestamp);
-          arScene.updateFingertips(hands);
+        // 1. Vision Hand Tracking (Throttled to ~30 FPS to eliminate main thread stutter)
+        if (handTracker && arScene.videoElement && (timestamp - lastVisionTimestamp >= VISION_THROTTLE_MS)) {
+          cachedHands = handTracker.detectForVideo(arScene.videoElement, timestamp);
+          lastVisionTimestamp = timestamp;
+        }
 
-          // In Calibration state, accumulate samples
-          if (currentState === UI_STATES.CALIBRATING && hands.length > 0) {
-            for (const h of hands) {
-              arUI.calibrationManager.addSample(h.indexTip);
-            }
-            const prog = arUI.calibrationManager.getProgress();
-            arUI.updateCalibrationProgress(prog, arUI.calibrationManager.getSampleCount());
-            if (prog >= 1.0) {
-              const btnConfirm = document.getElementById('btn-confirm-calib');
-              if (btnConfirm) btnConfirm.classList.add('pulse');
+        // Smooth fingertip updates on every 60 FPS frame
+        if (cachedHands.length > 0) {
+          arScene.updateFingertips(cachedHands);
+        }
+
+        // Handle SCAN_SURFACE state: 2-Hand Pinch & Stretch Gesture for table placement
+        if (currentState === UI_STATES.SCAN_SURFACE) {
+          if (cachedHands.length === 2) {
+            const leftHand = cachedHands.find(h => h.handedness === 'Left');
+            const rightHand = cachedHands.find(h => h.handedness === 'Right');
+            if (leftHand && rightHand) {
+              const span = calculateTwoHandSpan(leftHand, rightHand);
+              if (span && span.width >= 0.25) {
+                arScene.updatePinchPlacement(span);
+                hitDetector.arenaWidth = arScene.arenaWidth;
+
+                const scanInst = document.getElementById('scan-instructions');
+                if (scanInst) {
+                  scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur 2 Tangan Aktif:</span> Lebar Meja: <b>${(span.width * 100).toFixed(0)} cm</b> ${span.bothPinching ? '👌 (Pinch)' : ''}<br>Klik <b>Kunci Arena di Meja Ini</b> atau sentuh meja untuk mengunci!`;
+                }
+              }
             }
           }
+        }
 
-          // In Playing state, evaluate hand crossings
-          if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
-            const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
+        // In Calibration state, accumulate samples
+        if (currentState === UI_STATES.CALIBRATING && cachedHands.length > 0) {
+          for (const h of cachedHands) {
+            arUI.calibrationManager.addSample(h.indexTip);
+          }
+          const prog = arUI.calibrationManager.getProgress();
+          arUI.updateCalibrationProgress(prog, arUI.calibrationManager.getSampleCount());
+          if (prog >= 1.0) {
+            const btnConfirm = document.getElementById('btn-confirm-calib');
+            if (btnConfirm) btnConfirm.classList.add('pulse');
+          }
+        }
 
-            for (const h of hands) {
-              const prev = lastHandPositions[h.handedness] || h.indexTip;
-              handleHitEvaluation(prev, h.indexTip, currentTimeSec);
-              lastHandPositions[h.handedness] = { ...h.indexTip };
-            }
+        // In Playing state, evaluate hand crossings
+        if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
+          const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
+
+          for (const h of cachedHands) {
+            const prev = lastHandPositions[h.handedness] || h.indexTip;
+            handleHitEvaluation(prev, h.indexTip, currentTimeSec);
+            lastHandPositions[h.handedness] = { ...h.indexTip };
           }
         }
 
@@ -1237,14 +1297,10 @@
         if (arScene.renderer && arScene.scene && arScene.camera) {
           arScene.renderer.render(arScene.scene, arScene.camera);
         }
-
-        // Keep loop ticking (Three.js WebXR handles XR frames automatically when active)
-        if (!arScene.xrSession) {
-          requestAnimationFrame(onFrame);
-        }
       };
 
-      if (arScene.renderer?.xr) {
+      // Use Three.js setAnimationLoop ONLY (prevents duplicate exponential loops)
+      if (arScene.renderer) {
         arScene.renderer.setAnimationLoop(onFrame);
       } else {
         requestAnimationFrame(onFrame);

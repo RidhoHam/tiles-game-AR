@@ -164,6 +164,62 @@ export function classifyHandedness(handednessEntry, defaultHand = 'Right') {
 }
 
 /**
+ * Detects if thumb and index tips are pinching
+ *
+ * @param {Object} handKeypoints - Keypoints with thumbTip and indexTip
+ * @param {number} [threshold=0.08] - Distance threshold
+ * @returns {{ isPinching: boolean, distance: number }}
+ */
+export function detectPinch(handKeypoints, threshold = 0.08) {
+  if (!handKeypoints || !handKeypoints.thumbTip || !handKeypoints.indexTip) {
+    return { isPinching: false, distance: 1.0 };
+  }
+
+  const dx = handKeypoints.thumbTip.x - handKeypoints.indexTip.x;
+  const dy = handKeypoints.thumbTip.y - handKeypoints.indexTip.y;
+  const dz = (handKeypoints.thumbTip.z || 0) - (handKeypoints.indexTip.z || 0);
+  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+  return {
+    isPinching: distance < threshold,
+    distance: Number(distance.toFixed(4))
+  };
+}
+
+/**
+ * Calculates spatial span, width, and center between two hands (e.g. for dynamic table placement)
+ *
+ * @param {Object} leftHand
+ * @param {Object} rightHand
+ * @returns {Object|null}
+ */
+export function calculateTwoHandSpan(leftHand, rightHand) {
+  if (!leftHand || !rightHand || !leftHand.indexTip || !rightHand.indexTip) {
+    return null;
+  }
+
+  const leftPt = leftHand.indexTip;
+  const rightPt = rightHand.indexTip;
+
+  const width = Math.abs(rightPt.x - leftPt.x);
+  const centerX = (leftPt.x + rightPt.x) / 2;
+  const centerY = (leftPt.y + rightPt.y) / 2;
+  const centerZ = (leftPt.z + rightPt.z) / 2;
+
+  const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
+
+  return {
+    width: Number(width.toFixed(4)),
+    centerX: Number(centerX.toFixed(4)),
+    centerY: Number(centerY.toFixed(4)),
+    centerZ: Number(centerZ.toFixed(4)),
+    bothPinching,
+    leftPt,
+    rightPt
+  };
+}
+
+/**
  * Transforms normalized camera coordinates (or a full hand state) to 3D arena coordinates
  *
  * Camera: x in [0, 1] (left to right), y in [0, 1] (top to bottom), z relative depth
@@ -368,10 +424,13 @@ export class HandTracker {
       const handednessData = handednessesList[i];
       const defaultHand = (landmarksList.length === 2 && i === 0) ? 'Left' : 'Right';
       const { handedness, confidence } = classifyHandedness(handednessData, defaultHand);
+      const pinch = detectPinch(keypoints);
 
       const rawHandState = {
         handedness,
         confidence,
+        isPinching: pinch.isPinching,
+        pinchDistance: pinch.distance,
         indexTip: keypoints.indexTip,
         thumbTip: keypoints.thumbTip,
         middleTip: keypoints.middleTip,

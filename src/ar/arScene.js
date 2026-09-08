@@ -205,6 +205,7 @@ export class ARScene {
 
     this._buildArenaGeometry();
     this._buildReticle();
+    this._buildTableGuide();
     this._buildFingertipMeshes();
   }
 
@@ -334,6 +335,77 @@ export class ARScene {
   }
 
   /**
+   * Builds desktop/table holographic guide frame and reticle for non-WebXR fallback
+   * @private
+   */
+  _buildTableGuide() {
+    if (!this.three || !this.scene) return;
+    const THREE = this.three;
+
+    this.tableGuide = new THREE.Group();
+    this.tableGuide.visible = true;
+
+    // Glowing rectangular holographic desk frame
+    const frameGeo = new THREE.PlaneGeometry(this.arenaWidth * 1.05, this.arenaDepth * 0.95);
+    const frameMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.45
+    });
+    this.tableGuideMesh = new THREE.Mesh(frameGeo, frameMat);
+    this.tableGuideMesh.rotation.x = -Math.PI / 2 + 0.32; // Desk tilt
+    this.tableGuideMesh.position.set(0, -0.28, -1.05);
+    this.tableGuide.add(this.tableGuideMesh);
+
+    // Glowing target ring
+    const ringGeo = new THREE.RingGeometry(0.12, 0.16, 32);
+    ringGeo.rotateX(-Math.PI / 2 + 0.32);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xfacc15,
+      transparent: true,
+      opacity: 0.85,
+      side: THREE.DoubleSide
+    });
+    this.tableGuideRing = new THREE.Mesh(ringGeo, ringMat);
+    this.tableGuideRing.position.set(0, -0.27, -1.05);
+    this.tableGuide.add(this.tableGuideRing);
+
+    this.scene.add(this.tableGuide);
+  }
+
+  /**
+   * Updates arena width and position dynamically from 2-hand pinch/stretch gesture
+   *
+   * @param {Object} span - Result from calculateTwoHandSpan
+   */
+  updatePinchPlacement(span) {
+    if (!span || !this.arenaRoot) return;
+    const newWidth = Math.max(0.4, Math.min(1.5, span.width));
+    this.arenaWidth = newWidth;
+    this.arenaTransform.position.x = span.centerX;
+    if (typeof span.centerY === 'number') {
+      this.arenaTransform.position.y = Math.max(-0.5, Math.min(-0.15, span.centerY));
+    }
+
+    this.arenaRoot.position.set(
+      this.arenaTransform.position.x,
+      this.arenaTransform.position.y,
+      this.arenaTransform.position.z
+    );
+    this.arenaRoot.rotation.x = 0.32;
+    this.setLaneCount(this.laneCount);
+
+    if (this.tableGuideMesh) {
+      this.tableGuideMesh.scale.x = newWidth / 0.8;
+      this.tableGuideMesh.position.x = span.centerX;
+    }
+    if (this.tableGuideRing) {
+      this.tableGuideRing.position.x = span.centerX;
+    }
+  }
+
+  /**
    * Builds glowing fingertip tracker sphere meshes
    * @private
    */
@@ -417,13 +489,17 @@ export class ARScene {
   async initFallbackCamera(container = this.container) {
     this.mode = 'fallback';
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      this.placeArena({ x: 0.0, y: -0.3, z: -1.2 });
+      this.placeArena({ x: 0.0, y: -0.28, z: -1.05 });
       return false;
     }
 
     try {
       this.cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          width: { ideal: 960, max: 1280 },
+          height: { ideal: 540, max: 720 },
+          frameRate: { ideal: 30, max: 60 }
+        },
         audio: false
       });
 
@@ -450,12 +526,18 @@ export class ARScene {
         this.videoElement = video;
       }
 
-      // Position arena in default comfortable interaction zone
-      this.placeArena({ x: 0.0, y: -0.3, z: -1.2 });
+      // Position arena preview on desk with comfortable desk tilt, awaiting user anchor/pinch
+      this.placeArena({ x: 0.0, y: -0.28, z: -1.05 }, null, false);
+      if (this.arenaRoot) {
+        this.arenaRoot.rotation.x = 0.32;
+      }
+      if (this.tableGuide) {
+        this.tableGuide.visible = true;
+      }
       return true;
     } catch (err) {
       console.warn('[ARScene] Fallback camera getUserMedia failed, using default virtual position:', err.message);
-      this.placeArena({ x: 0.0, y: -0.3, z: -1.2 });
+      this.placeArena({ x: 0.0, y: -0.28, z: -1.05 });
       return false;
     }
   }
@@ -465,11 +547,12 @@ export class ARScene {
    *
    * @param {{ x: number, y: number, z: number }} position
    * @param {{ x: number, y: number, z: number, w: number }} [quaternion]
+   * @param {boolean} [markPlaced=true]
    */
-  placeArena(position = { x: 0, y: -0.3, z: -1.2 }, quaternion = null) {
+  placeArena(position = { x: 0, y: -0.28, z: -1.05 }, quaternion = null, markPlaced = true) {
     this.arenaTransform.position.x = position.x ?? 0;
-    this.arenaTransform.position.y = position.y ?? -0.3;
-    this.arenaTransform.position.z = position.z ?? -1.2;
+    this.arenaTransform.position.y = position.y ?? -0.28;
+    this.arenaTransform.position.z = position.z ?? -1.05;
 
     if (this.arenaRoot) {
       this.arenaRoot.position.set(
@@ -480,36 +563,36 @@ export class ARScene {
 
       if (quaternion) {
         this.arenaRoot.quaternion.set(quaternion.x, quaternion.y, quaternion.z, quaternion.w);
+      } else if (this.mode === 'fallback') {
+        this.arenaRoot.rotation.x = 0.32;
       }
     }
 
-    this.isPlaced = true;
-    if (this.reticle) {
-      this.reticle.visible = false;
+    this.isPlaced = Boolean(markPlaced);
+    if (this.isPlaced) {
+      if (this.reticle) this.reticle.visible = false;
+      if (this.tableGuide) this.tableGuide.visible = false;
     }
   }
 
   /**
-   * Confirms placement of arena at current reticle pose
+   * Confirms placement of arena at current reticle or table guide pose
    */
   confirmPlacement() {
-    if (!this.reticle || !this.reticle.visible) {
-      this.placeArena();
-      return;
-    }
+    if (this.reticle && this.reticle.visible) {
+      this.arenaTransform.position.x = this.reticle.position.x;
+      this.arenaTransform.position.y = this.reticle.position.y;
+      this.arenaTransform.position.z = this.reticle.position.z;
 
-    this.arenaTransform.position.x = this.reticle.position.x;
-    this.arenaTransform.position.y = this.reticle.position.y;
-    this.arenaTransform.position.z = this.reticle.position.z;
-
-    if (this.arenaRoot) {
-      this.arenaRoot.position.copy(this.reticle.position);
-      // Align arena rotation with reticle
-      this.arenaRoot.quaternion.copy(this.reticle.quaternion);
+      if (this.arenaRoot) {
+        this.arenaRoot.position.copy(this.reticle.position);
+        this.arenaRoot.quaternion.copy(this.reticle.quaternion);
+      }
     }
 
     this.isPlaced = true;
-    this.reticle.visible = false;
+    if (this.reticle) this.reticle.visible = false;
+    if (this.tableGuide) this.tableGuide.visible = false;
   }
 
   /**
