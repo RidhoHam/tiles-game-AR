@@ -409,9 +409,9 @@ git commit -m "feat: implement Strudel concert grand piano sound engine and feed
   * `HandState`: `{ handedness: 'Left'|'Right', indexTip: {x,y,z}, thumbTip: {x,y,z}, middleTip: {x,y,z}, rawLandmarks }`
   * Exponential Moving Average (EMA) smoothing for stability against camera noise.
 
-- [ ] **Step 1: Implement `src/vision/handTracker.js`**
-- [ ] **Step 2: Add test in `tests/handTracker.test.mjs` verifying EMA smoothing and coordinate normalization**
-- [ ] **Step 3: Commit**
+- [x] **Step 1: Implement `src/vision/handTracker.js`**
+- [x] **Step 2: Add test in `tests/handTracker.test.mjs` verifying EMA smoothing and coordinate normalization**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/vision/handTracker.js tests/handTracker.test.mjs
