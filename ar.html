@@ -684,13 +684,16 @@
       </label>
 
       <!-- Navigation & Start -->
-      <div style="display: flex; gap: 8px; margin-top: 6px;">
-        <a href="index.html" class="action-btn secondary" id="btn-back-2d" style="flex: 1; text-decoration: none; justify-content: center;">
-          ← Back to 2D Mode
-        </a>
-        <button id="btn-start-calibration" class="action-btn" style="flex: 2; justify-content: center;">
-          Start Calibration →
+      <div style="display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;">
+        <button id="btn-direct-play" class="action-btn" style="width: 100%; justify-content: center; font-size: 15px; background: linear-gradient(135deg, #059669, #10b981); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);">
+          ▶️ Mulai Main Sekarang (Play Now)
         </button>
+        <button id="btn-start-calibration" class="action-btn secondary" style="flex: 1; justify-content: center; font-size: 12px;">
+          Kalibrasi Tangan
+        </button>
+        <a href="index.html" class="action-btn secondary" id="btn-back-2d" style="flex: 1; text-decoration: none; justify-content: center; font-size: 12px;">
+          ← Mode 2D
+        </a>
       </div>
     </div>
   </div>
@@ -1098,6 +1101,17 @@
         }
       });
 
+      // Direct Play Button (Skip extra calibration, immediately start with current table width)
+      const btnDirectPlay = document.getElementById('btn-direct-play');
+      btnDirectPlay?.addEventListener('click', async () => {
+        await soundEngine.init();
+        prepareSongChart();
+        hitDetector.arenaWidth = arScene.arenaWidth;
+        arScene.setLaneCount(selectedLanes);
+        arUI.stateMachine.transition(UI_STATES.COUNTDOWN);
+        arUI.showCountdown(3, () => startSongGameplay());
+      });
+
       // Start Calibration Button
       const btnStartCalib = document.getElementById('btn-start-calibration');
       btnStartCalib?.addEventListener('click', () => {
@@ -1112,10 +1126,15 @@
 
       const applyCalibrationAndStart = () => {
         const calib = arUI.calibrationManager.computeCalibration();
-        hitDetector.arenaWidth = calib.arenaWidth;
-        hitDetector.hitPlaneZ = calib.hitPlaneZ;
-        arScene.arenaWidth = calib.arenaWidth;
-        arScene.hitPlaneZ = calib.hitPlaneZ;
+        if (arUI.calibrationManager.samples.length > 0) {
+          hitDetector.arenaWidth = calib.arenaWidth;
+          hitDetector.hitPlaneZ = calib.hitPlaneZ;
+          arScene.arenaWidth = calib.arenaWidth;
+          arScene.hitPlaneZ = calib.hitPlaneZ;
+        } else {
+          // Keep the custom 2-hand pinch table width!
+          hitDetector.arenaWidth = arScene.arenaWidth;
+        }
         arScene.setLaneCount(selectedLanes);
 
         arUI.stateMachine.transition(UI_STATES.COUNTDOWN);
