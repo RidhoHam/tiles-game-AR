@@ -1219,10 +1219,11 @@
      * - Animated holographic table rectangle spanning between user hands
      * - Dynamic corner brackets [ ] and neon dashed borders
      * - Real-time centimeter width badge (e.g. 📏 LEBAR ARENA: 85 cm)
+     * - Hands-free Dwell Lock countdown ring (🔒 100%)
      * - Pinch indicators (👌 PINCH) with golden sparks
      * - In-game fingertip crosshairs with ripples
      */
-    function drawGestureOverlay(ctx, hands, width, height, state, span, arenaWidth, laneCount) {
+    function drawGestureOverlay(ctx, hands, width, height, state, span, arenaWidth, laneCount, lockProgress = 0) {
       ctx.clearRect(0, 0, width, height);
       const time = performance.now();
 
@@ -1367,10 +1368,10 @@
 
             // 1c. Animated Glowing Dashed Outer Border
             ctx.save();
-            ctx.strokeStyle = '#38bdf8';
-            ctx.lineWidth = 2.5;
-            ctx.shadowColor = '#38bdf8';
-            ctx.shadowBlur = 14;
+            ctx.strokeStyle = lockProgress > 0 ? '#facc15' : '#38bdf8';
+            ctx.lineWidth = lockProgress > 0 ? 3.5 : 2.5;
+            ctx.shadowColor = lockProgress > 0 ? '#facc15' : '#38bdf8';
+            ctx.shadowBlur = lockProgress > 0 ? 18 : 14;
             ctx.setLineDash([12, 8]);
             ctx.lineDashOffset = -time / 30;
             ctx.beginPath();
@@ -1412,38 +1413,92 @@
             ctx.stroke();
             ctx.restore();
 
-            // 1g. Floating Centimeter Badge Directly Above Rectangle
+            // 1g. Floating Centimeter & Hands-Free Lock Badge
             const badgeCenterX = (p1.x + p2.x) / 2;
             const badgeY = Math.max(38, topY - 32);
             const widthCm = Math.round((arenaWidth || 0.8) * 100);
 
             ctx.save();
-            const badgeText = `📏 LEBAR ARENA: ${widthCm} cm`;
+            const badgeText = lockProgress > 0
+              ? `🔒 MENGUNCI ARENA: ${widthCm} cm (${Math.round(lockProgress * 100)}%)`
+              : `📏 LEBAR ARENA: ${widthCm} cm`;
             ctx.font = 'bold 15px "Outfit", system-ui, sans-serif';
             const metrics = ctx.measureText(badgeText);
-            const badgeW = Math.max(210, metrics.width + 36);
-            const badgeH = 34;
+            const badgeW = Math.max(220, metrics.width + 38);
+            const badgeH = 36;
 
-            ctx.fillStyle = 'rgba(11, 15, 25, 0.90)';
-            ctx.strokeStyle = bothPinching ? '#facc15' : '#38bdf8';
-            ctx.lineWidth = 2;
-            ctx.shadowColor = bothPinching ? '#facc15' : '#38bdf8';
-            ctx.shadowBlur = 12;
+            ctx.fillStyle = 'rgba(11, 15, 25, 0.92)';
+            ctx.strokeStyle = lockProgress > 0 ? '#facc15' : (bothPinching ? '#facc15' : '#38bdf8');
+            ctx.lineWidth = lockProgress > 0 ? 3 : 2;
+            ctx.shadowColor = lockProgress > 0 ? '#facc15' : (bothPinching ? '#facc15' : '#38bdf8');
+            ctx.shadowBlur = lockProgress > 0 ? 16 : 12;
             ctx.beginPath();
             if (ctx.roundRect) {
-              ctx.roundRect(badgeCenterX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 17);
+              ctx.roundRect(badgeCenterX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH, 18);
             } else {
               ctx.rect(badgeCenterX - badgeW / 2, badgeY - badgeH / 2, badgeW, badgeH);
             }
             ctx.fill();
             ctx.stroke();
 
+            // Animated progress fill inside badge
+            if (lockProgress > 0) {
+              const fillW = (badgeW - 6) * lockProgress;
+              ctx.fillStyle = 'rgba(250, 204, 21, 0.35)';
+              ctx.beginPath();
+              if (ctx.roundRect) {
+                ctx.roundRect(badgeCenterX - badgeW / 2 + 3, badgeY - badgeH / 2 + 3, fillW, badgeH - 6, 15);
+              } else {
+                ctx.rect(badgeCenterX - badgeW / 2 + 3, badgeY - badgeH / 2 + 3, fillW, badgeH - 6);
+              }
+              ctx.fill();
+            }
+
             ctx.shadowBlur = 0;
-            ctx.fillStyle = bothPinching ? '#facc15' : '#f8fafc';
+            ctx.fillStyle = lockProgress > 0 ? '#facc15' : (bothPinching ? '#facc15' : '#f8fafc');
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(badgeText, badgeCenterX, badgeY);
             ctx.restore();
+
+            // Radial Lock Progress Ring in Center of Arena Table
+            if (lockProgress > 0) {
+              ctx.save();
+              const lockRingRadius = 32;
+              const lockRingY = (topY + botY) / 2;
+
+              // Dark background disc
+              ctx.fillStyle = 'rgba(11, 15, 25, 0.88)';
+              ctx.beginPath();
+              ctx.arc(badgeCenterX, lockRingY, lockRingRadius + 8, 0, Math.PI * 2);
+              ctx.fill();
+
+              // Track ring
+              ctx.beginPath();
+              ctx.arc(badgeCenterX, lockRingY, lockRingRadius, 0, Math.PI * 2);
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
+              ctx.lineWidth = 5;
+              ctx.stroke();
+
+              // Filling gold arc
+              ctx.beginPath();
+              ctx.arc(badgeCenterX, lockRingY, lockRingRadius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * lockProgress);
+              ctx.strokeStyle = '#facc15';
+              ctx.lineWidth = 6;
+              ctx.lineCap = 'round';
+              ctx.shadowColor = '#facc15';
+              ctx.shadowBlur = 18;
+              ctx.stroke();
+
+              // Center text inside ring
+              ctx.shadowBlur = 0;
+              ctx.font = 'bold 14px "Outfit", sans-serif';
+              ctx.fillStyle = '#facc15';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(`🔒 ${Math.round(lockProgress * 100)}%`, badgeCenterX, lockRingY);
+              ctx.restore();
+            }
 
             // 1h. Visual Pinch Cues & Badges on Fingertips
             const drawPinchIndicator = (pt, thumbPt, hand, color, label) => {
@@ -1503,18 +1558,23 @@
 
             // 1i. Floating Bottom Action Guidance
             ctx.save();
-            const subMsg = bothPinching
-              ? '✨ DUA TANGAN PINCH: Geser kiri/kanan untuk resize • Tap layar untuk kunci!'
-              : '✨ Rentangkan kedua tangan di atas meja • Tap layar atau klik tombol untuk mulai!';
-            ctx.font = '500 13px "Inter", sans-serif';
+            let subMsg = '';
+            if (lockProgress > 0) {
+              subMsg = '🔒 TAHAN POSISI SEBENTAR... Otomatis mengunci arena meja!';
+            } else if (bothPinching) {
+              subMsg = '👌 Cubit & geser untuk atur • Diamkan 1.2s atau Lepas Cubitan untuk KUNCI!';
+            } else {
+              subMsg = '✨ Diamkan tangan 1.2 detik di posisi meja untuk KUNCI otomatis (Hands-Free)!';
+            }
+            ctx.font = '600 13px "Inter", sans-serif';
             const subMetrics = ctx.measureText(subMsg);
             const subW = subMetrics.width + 28;
             const subH = 28;
             const subY = Math.min(height - 20, botY + 30);
 
-            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.lineWidth = 1;
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+            ctx.strokeStyle = lockProgress > 0 ? '#facc15' : 'rgba(255, 255, 255, 0.15)';
+            ctx.lineWidth = lockProgress > 0 ? 1.5 : 1;
             ctx.beginPath();
             if (ctx.roundRect) {
               ctx.roundRect(badgeCenterX - subW / 2, subY - subH / 2, subW, subH, 14);
@@ -1524,7 +1584,7 @@
             ctx.fill();
             ctx.stroke();
 
-            ctx.fillStyle = bothPinching ? '#facc15' : '#38bdf8';
+            ctx.fillStyle = lockProgress > 0 ? '#facc15' : (bothPinching ? '#facc15' : '#38bdf8');
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(subMsg, badgeCenterX, subY);
@@ -1681,6 +1741,13 @@
       let frameCount = 0;
       let lastFpsTime = performance.now();
 
+      // Hands-Free Lock State (Zero-friction confirmation without mouse/touch)
+      let lockHoldStartTime = null;
+      let lockProgress = 0;
+      let lastSteadyWidth = null;
+      let wasPinchingBoth = false;
+      let unpinchLockStartTime = null;
+
       const onFrame = (timestamp, xrFrame) => {
         const dt = Math.min(0.1, (timestamp - lastTime) / 1000);
         lastTime = timestamp;
@@ -1721,16 +1788,77 @@
             if (leftHand && rightHand) {
               currentSpan = calculateTwoHandSpan(leftHand, rightHand);
               if (currentSpan && currentSpan.width >= 0.20) {
-                arScene.updatePinchPlacement(currentSpan);
-                hitDetector.arenaWidth = arScene.arenaWidth;
+                const bothPinching = Boolean(leftHand.isPinching && rightHand.isPinching);
+
+                // Option B: Unpinch trigger (releasing pinch immediately triggers quick lock)
+                if (wasPinchingBoth && !bothPinching && !unpinchLockStartTime) {
+                  unpinchLockStartTime = timestamp;
+                }
+                wasPinchingBoth = bothPinching;
+
+                if (unpinchLockStartTime) {
+                  // Freeze arena width and run quick 600ms confirmation lock
+                  const unpinchElapsed = timestamp - unpinchLockStartTime;
+                  lockProgress = Math.min(1.0, unpinchElapsed / 600);
+                  if (lockProgress >= 1.0) {
+                    soundEngine.init().then(() => soundEngine.playFeedback('PERFECT'));
+                    arScene.confirmPlacement();
+                    arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+                    unpinchLockStartTime = null;
+                    lockHoldStartTime = null;
+                    lockProgress = 0;
+                    return;
+                  }
+                } else {
+                  // Normal sizing mode
+                  arScene.updatePinchPlacement(currentSpan);
+                  hitDetector.arenaWidth = arScene.arenaWidth;
+
+                  // Option A: Steady Dwell Lock (Hold hands still at desk for 1.2 seconds)
+                  const widthDelta = lastSteadyWidth !== null ? Math.abs(currentSpan.width - lastSteadyWidth) : 1.0;
+                  const isSteady = widthDelta < 0.018; // < 1.8cm movement
+                  lastSteadyWidth = currentSpan.width;
+
+                  if (isSteady) {
+                    if (!lockHoldStartTime) {
+                      lockHoldStartTime = timestamp;
+                    }
+                    const holdElapsed = timestamp - lockHoldStartTime;
+                    lockProgress = Math.min(1.0, holdElapsed / 1200); // 1.2s steady hold
+
+                    if (lockProgress >= 1.0) {
+                      soundEngine.init().then(() => soundEngine.playFeedback('PERFECT'));
+                      arScene.confirmPlacement();
+                      arUI.stateMachine.transition(UI_STATES.SELECT_SONG_MODE);
+                      lockHoldStartTime = null;
+                      lockProgress = 0;
+                      return;
+                    }
+                  } else {
+                    lockHoldStartTime = null;
+                    lockProgress = 0;
+                  }
+                }
 
                 const scanInst = document.getElementById('scan-instructions');
                 if (scanInst) {
-                  scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur 2 Tangan Aktif:</span> Lebar Meja: <b>${(arScene.arenaWidth * 100).toFixed(0)} cm</b> ${currentSpan.bothPinching ? '👌 (Pinch)' : ''}<br>Klik <b>Kunci Arena di Meja Ini</b> atau sentuh meja untuk mengunci!`;
+                  if (lockProgress > 0) {
+                    scanInst.innerHTML = `<span style="color: #facc15; font-weight: 700;">🔒 Mengunci Otomatis: ${Math.round(lockProgress * 100)}%</span> (Tahan posisi sejenak...)`;
+                  } else {
+                    scanInst.innerHTML = `<span style="color: #38bdf8; font-weight: 700;">✨ Gestur 2 Tangan:</span> Lebar Meja: <b>${(arScene.arenaWidth * 100).toFixed(0)} cm</b> ${bothPinching ? '👌 (Pinch)' : ''}<br>👉 <b>Diamkan 1.2s</b> atau <b>Lepas Cubitan</b> untuk KUNCI otomatis tanpa sentuh layar!`;
+                  }
                 }
               }
             }
+          } else {
+            lockHoldStartTime = null;
+            unpinchLockStartTime = null;
+            lockProgress = 0;
           }
+        } else {
+          lockHoldStartTime = null;
+          unpinchLockStartTime = null;
+          lockProgress = 0;
         }
 
         // In Calibration state, accumulate samples
@@ -1789,7 +1917,7 @@
           arScene.renderer.render(arScene.scene, arScene.camera);
         }
 
-        // 4. Render 2D Spatial Gesture Overlay (Holographic table rectangle, pinch badges, centimeter readout)
+        // 4. Render 2D Spatial Gesture Overlay (Holographic table rectangle, pinch badges, centimeter readout, lock countdown)
         if (gestureCtx && gestureCanvas) {
           drawGestureOverlay(
             gestureCtx,
@@ -1799,7 +1927,8 @@
             currentState,
             currentSpan,
             arScene.arenaWidth,
-            selectedLanes
+            selectedLanes,
+            lockProgress
           );
         }
       };
