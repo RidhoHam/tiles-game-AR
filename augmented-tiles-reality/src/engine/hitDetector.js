@@ -234,14 +234,20 @@ export class HitDetector {
     candidates.sort((a, b) => a.diffSec - b.diffSec);
     const bestCandidate = candidates[0].note;
 
-    bestCandidate.played = true;
-
-    if (Array.isArray(bestCandidate.notes)) {
+    let matchedSubNote = null;
+    if (Array.isArray(bestCandidate.notes) && bestCandidate.notes.length > 0) {
       for (const subNote of bestCandidate.notes) {
-        if (subNote.lane === lane) {
+        if (subNote.lane === lane && !subNote.played) {
           subNote.played = true;
+          matchedSubNote = subNote;
+          break;
         }
       }
+      bestCandidate.allSubNotesPlayed = bestCandidate.notes.every(s => s.played);
+      bestCandidate.played = true; // Mark played true for single hit registration
+    } else {
+      bestCandidate.played = true;
+      bestCandidate.allSubNotesPlayed = true;
     }
 
     const timingDiff = evaluatedTime - bestCandidate.timeSec;
@@ -257,6 +263,7 @@ export class HitDetector {
       timingDiff,
       timingDiffMs: timingDiff * 1000,
       note: bestCandidate,
+      subNote: matchedSubNote,
       lane
     };
   }

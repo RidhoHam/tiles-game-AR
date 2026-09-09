@@ -707,6 +707,33 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       return chart;
     }
 
+    function isChordFullyPlayed(note, chartNotes) {
+      if (!note) return true;
+      if (note.missed) return true;
+
+      // Case 1: Parent note with sub-notes array (e.g. 4-lane demo_canon)
+      if (Array.isArray(note.notes) && note.notes.length >= 2) {
+        return note.notes.every(s => s.played);
+      }
+
+      // Case 2: Sibling notes linked via chordGroup (e.g. 8-lane demo_canon, MIDI imports)
+      if (Array.isArray(note.chordGroup) && note.chordGroup.length >= 2) {
+        return note.chordGroup.every(s => s.played);
+      }
+
+      // Case 3: Simultaneous notes in chart without explicit chordGroup
+      if (Array.isArray(chartNotes)) {
+        const simultaneous = chartNotes.filter(m =>
+          !m.missed && Math.abs(m.timeSec - note.timeSec) <= 0.03
+        );
+        if (simultaneous.length >= 2) {
+          return simultaneous.every(m => m.played);
+        }
+      }
+
+      return Boolean(note.played);
+    }
+
     function adaptChartToLanes(chart, targetLanes) {
       if (!chart) return chart;
       let adapted = chart;
@@ -899,32 +926,45 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       // In wait_chord mode, prioritize any chord currently stopping the song
       let hitCandidates = [];
       if (isWaitingForHit) {
-        const waitingNote = notes.find(n => !n.played && !n.missed);
+        const waitingNote = notes.find(n => !isChordFullyPlayed(n, notes));
         if (waitingNote) {
           const targetTime = waitingNote.timeSec;
-          hitCandidates = notes.filter(n => !n.played && !n.missed && Math.abs(n.timeSec - targetTime) <= 0.08);
+          hitCandidates = notes.filter(n => !isChordFullyPlayed(n, notes) && Math.abs(n.timeSec - targetTime) <= 0.08);
         }
       }
 
       if (hitCandidates.length === 0) {
         hitCandidates = notes.filter(n =>
-          !n.played && !n.missed &&
+          !isChordFullyPlayed(n, notes) &&
           Math.abs(n.timeSec - currentTimeSec) <= (goodWin * 1.8)
         );
       }
 
       if (hitCandidates.length > 0) {
+        let totalStruck = 0;
         for (const note of hitCandidates) {
           note.played = true;
           note.playedSound = true;
-          soundEngine.playNote(note.note || note.midi, note.durationSec || 0.4);
-          const laneOrMidi = (arScene.viewMode === 'roll' && note.midi) ? note.midi : note.lane;
-          triggerKeyHitAnimation(laneOrMidi, 'PERFECT', true);
-          arScene.triggerHitVFX(laneOrMidi, 'PERFECT');
+          if (Array.isArray(note.notes) && note.notes.length > 0) {
+            for (const sn of note.notes) {
+              sn.played = true;
+              totalStruck++;
+              soundEngine.playNote(sn.note || sn.midi, sn.durationSec || note.durationSec || 0.4);
+              const lOrM = (arScene.viewMode === 'roll' && sn.midi) ? sn.midi : sn.lane;
+              triggerKeyHitAnimation(lOrM, 'PERFECT', true);
+              arScene.triggerHitVFX(lOrM, 'PERFECT');
+            }
+          } else {
+            totalStruck++;
+            soundEngine.playNote(note.note || note.midi, note.durationSec || 0.4);
+            const laneOrMidi = (arScene.viewMode === 'roll' && note.midi) ? note.midi : note.lane;
+            triggerKeyHitAnimation(laneOrMidi, 'PERFECT', true);
+            arScene.triggerHitVFX(laneOrMidi, 'PERFECT');
+          }
         }
 
         const scoreRes = arUI.scoreManager.recordHit('PERFECT', { isChord: true });
-        arUI.showJudgement('PERFECT', scoreRes.points * hitCandidates.length);
+        arUI.showJudgement('PERFECT', scoreRes.points * Math.max(1, totalStruck));
         arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
         arScene.setSpatialCombo(arUI.scoreManager.combo, '⚡ SLAM');
         arScene.worldReaction.setCombo(arUI.scoreManager.combo);
@@ -2273,20 +2313,43 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.restore();
 
         // Waiting Mode Prompt (when stopped at chord or note)
+        let waitingLanesList = [];
+        if (isWaitingForHit && chart && Array.isArray(chart.notes)) {
+          const waitingNote = chart.notes.find(n => !isChordFullyPlayed(n, chart.notes));
+          if (waitingNote) {
+            if (Array.isArray(waitingNote.notes) && waitingNote.notes.length > 0) {
+              waitingLanesList = waitingNote.notes.filter(s => !s.played).map(s => s.lane);
+            } else if (Array.isArray(waitingNote.chordGroup) && waitingNote.chordGroup.length > 0) {
+              waitingLanesList = waitingNote.chordGroup.filter(s => !s.played).map(s => s.lane);
+            } else {
+              const sim = chart.notes.filter(m => !m.missed && !m.played && Math.abs(m.timeSec - waitingNote.timeSec) <= 0.03);
+              waitingLanesList = sim.map(s => s.lane);
+            }
+          }
+        }
+        const waitingLanesSet = new Set(waitingLanesList);
+
         if (isWaitingForHit) {
           ctx.save();
           const midHitX = (hitL.x + hitR.x) / 2;
           const midHitY = (hitL.y + hitR.y) / 2 - 26;
-          ctx.font = 'bold 12px "Outfit", sans-serif';
+          ctx.font = 'bold 13px "Outfit", sans-serif';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           const pulse = 0.75 + Math.sin(time / 140) * 0.25;
           ctx.fillStyle = `rgba(250, 204, 21, ${pulse})`;
           ctx.shadowColor = '#facc15';
-          ctx.shadowBlur = 10;
-          const msg = currentGameMode === 'wait_chord'
-            ? '⏸️ STOP CHORD — Pukul Tuts / Tekan Space untuk Lanjut!'
-            : '⏸️ STOP NOTE — Pukul Tuts untuk Lanjut!';
+          ctx.shadowBlur = 12;
+
+          let msg = '⏸️ STOP NOTE — Pukul Tuts untuk Lanjut!';
+          if (currentGameMode === 'wait_chord') {
+            if (waitingLanesList.length > 0) {
+              const laneLabels = waitingLanesList.map(l => `L${l + 1}`).join(' + ');
+              msg = `⏸️ STOP CHORD — Tekan Tuts [ ${laneLabels} ] atau Spacebar!`;
+            } else {
+              msg = '⏸️ STOP CHORD — Pukul Tuts / Tekan Space untuk Lanjut!';
+            }
+          }
           ctx.fillText(msg, midHitX, midHitY);
           ctx.restore();
         }
@@ -2434,6 +2497,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
           const isPress = pressingLanes.has(l);
           const isHov = hoverLanes.has(l);
+          const isWaitingLane = waitingLanesSet.has(l);
 
           ctx.beginPath();
           ctx.moveTo(hbTL.x, hbTL.y);
@@ -2453,6 +2517,12 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             ctx.lineWidth = 2.4;
             ctx.shadowColor = '#facc15';
             ctx.shadowBlur = 8;
+          } else if (isWaitingLane) {
+            const wPulse = 0.75 + Math.sin(time / 110) * 0.25;
+            ctx.strokeStyle = `rgba(250, 204, 21, ${wPulse})`; // Pulsing gold highlight for keys waiting to be pressed
+            ctx.lineWidth = 2.8;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 14;
           } else {
             ctx.strokeStyle = 'rgba(56, 189, 248, 0.40)'; // Clean crisp neon cyan outline
             ctx.lineWidth = 1.4;
@@ -2795,15 +2865,24 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               // Evaluate hit using the new screen-space dynamic hitbox API
               const hit = hitDetector.evaluateLanePress(press.lane, currentTimeSec, currentChart.notes);
               if (hit) {
-                hit.note.played = true;
-                hit.note.playedSound = true;
-                soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
+                const soundTarget = hit.subNote || hit.note;
+                const midiOrNote = soundTarget.note || soundTarget.midi;
+                if (midiOrNote) {
+                  soundEngine.playNote(midiOrNote, soundTarget.durationSec || hit.note.durationSec || 0.35);
+                }
 
-                const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
+                if (Array.isArray(hit.note.notes) && hit.note.notes.length >= 2) {
+                  hit.note.played = hit.note.notes.every(s => s.played);
+                } else {
+                  hit.note.played = true;
+                }
+                hit.note.playedSound = true;
+
+                const scoreRes = arUI.scoreManager.recordHit(hit.judgement, { isChord: Boolean(hit.note.type === 'chord' || hit.note.isChord) });
                 arUI.showJudgement(hit.judgement, scoreRes.points);
                 arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
 
-                const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
+                const laneOrMidi = (arScene.viewMode === 'roll' && soundTarget.midi) ? soundTarget.midi : press.lane;
                 triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
                 arScene.triggerHitVFX(laneOrMidi, hit.judgement);
                 arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
@@ -2822,19 +2901,26 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           const tentativeTimeSec = (timestamp / 1000) - songStartTimeSec;
 
           if (currentGameMode === 'wait_chord') {
-            const unhitChord = currentChart.notes.find(n =>
-              !n.played && !n.missed &&
-              (n.type === 'chord' || n.isChord || (n.chordGroup && n.chordGroup.length >= 2)) &&
-              tentativeTimeSec >= (n.timeSec - 0.02)
-            );
+            const unhitChord = currentChart.notes.find(n => {
+              if (n.missed) return false;
+              const isChord = Boolean(
+                (Array.isArray(n.notes) && n.notes.length >= 2) ||
+                (Array.isArray(n.chordGroup) && n.chordGroup.length >= 2) ||
+                (n.type === 'chord' || n.isChord)
+              );
+              if (!isChord) return false;
+
+              // Stay waiting as long as ANY note/subnote of the chord is unplayed
+              return !isChordFullyPlayed(n, currentChart.notes) && tentativeTimeSec >= (n.timeSec - 0.02);
+            });
+
             if (unhitChord) {
               isWaitingForHit = true;
-              songStartTimeSec += dt; // freeze song clock until chord is played
+              songStartTimeSec += dt; // freeze song clock until EVERY note of chord is played!
             }
           } else if (currentGameMode === 'wait_all') {
             const unhitNote = currentChart.notes.find(n =>
-              !n.played && !n.missed &&
-              tentativeTimeSec >= (n.timeSec - 0.02)
+              !isChordFullyPlayed(n, currentChart.notes) && tentativeTimeSec >= (n.timeSec - 0.02)
             );
             if (unhitNote) {
               isWaitingForHit = true;
@@ -2874,7 +2960,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             if (Array.isArray(currentChart.notes)) {
               for (const note of currentChart.notes) {
                 if (!note.playedSound && currentTimeSec >= note.timeSec) {
-                  const isChord = Boolean(note.type === 'chord' || note.isChord);
+                  const isChord = Boolean(
+                    note.type === 'chord' || note.isChord ||
+                    (Array.isArray(note.notes) && note.notes.length >= 2) ||
+                    (Array.isArray(note.chordGroup) && note.chordGroup.length >= 2)
+                  );
                   if (currentGameMode === 'wait_chord' && isChord) continue;
                   if (currentGameMode === 'wait_all') continue;
 
