@@ -1004,7 +1004,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
           const tips = [thumbPt, indexPt, midPt, ringPt, pinkyPt].filter(Boolean);
           for (const tip of tips) {
-            mCtx.lineWidth = 26;
+            mCtx.lineWidth = 30;
             mCtx.beginPath();
             mCtx.moveTo(wristPt.x, wristPt.y);
             mCtx.lineTo(tip.x, tip.y);
@@ -1015,58 +1015,100 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           continue;
         }
 
-        // Full 21 Landmark Hand Mesh
         mCtx.save();
         mCtx.fillStyle = '#ffffff';
         mCtx.strokeStyle = '#ffffff';
         mCtx.lineCap = 'round';
         mCtx.lineJoin = 'round';
 
-        // 1. Solid Palm Polygon
+        // 1. Natural Forearm Extension (connects smoothly into the arm/sleeve, no severed wrist)
+        const armDirX = pts[0].x - pts[9].x;
+        const armDirY = pts[0].y - pts[9].y;
+        const armDirLen = Math.hypot(armDirX, armDirY) || 1;
+        const uDirX = armDirX / armDirLen;
+        const uDirY = armDirY / armDirLen;
+        const perpX = -uDirY;
+        const perpY = uDirX;
+        const halfArmW = Math.max(30, Math.hypot(pts[17].x - pts[1].x, pts[17].y - pts[1].y) * 0.48);
+        const armExtLen = 130;
+
+        const armExtL = { x: pts[0].x + uDirX * armExtLen - perpX * halfArmW, y: pts[0].y + uDirY * armExtLen - perpY * halfArmW };
+        const armExtR = { x: pts[0].x + uDirX * armExtLen + perpX * halfArmW, y: pts[0].y + uDirY * armExtLen + perpY * halfArmW };
+        const wristL = { x: pts[0].x - perpX * halfArmW, y: pts[0].y - perpY * halfArmW };
+        const wristR = { x: pts[0].x + perpX * halfArmW, y: pts[0].y + perpY * halfArmW };
+
+        // 2. Continuous Palm Body Polygon
         mCtx.beginPath();
-        mCtx.moveTo(pts[0].x, pts[0].y);   // Wrist
+        mCtx.moveTo(armExtL.x, armExtL.y);
+        mCtx.lineTo(wristL.x, wristL.y);
         mCtx.lineTo(pts[1].x, pts[1].y);   // Thumb CMC
         mCtx.lineTo(pts[2].x, pts[2].y);   // Thumb MCP
         mCtx.lineTo(pts[5].x, pts[5].y);   // Index MCP
         mCtx.lineTo(pts[9].x, pts[9].y);   // Middle MCP
         mCtx.lineTo(pts[13].x, pts[13].y); // Ring MCP
         mCtx.lineTo(pts[17].x, pts[17].y); // Pinky MCP
+        mCtx.lineTo(wristR.x, wristR.y);
+        mCtx.lineTo(armExtR.x, armExtR.y);
         mCtx.closePath();
         mCtx.fill();
 
-        // 2. Five Fingers with anatomically tapered capsules
+        // 3. Fleshy Interdigital Webbing between adjacent fingers
+        const addWebbing = (mcpA, pipA, mcpB, pipB) => {
+          const wA = {
+            x: pts[mcpA].x + (pts[pipA].x - pts[mcpA].x) * 0.44,
+            y: pts[mcpA].y + (pts[pipA].y - pts[mcpA].y) * 0.44
+          };
+          const wB = {
+            x: pts[mcpB].x + (pts[pipB].x - pts[mcpB].x) * 0.44,
+            y: pts[mcpB].y + (pts[pipB].y - pts[mcpB].y) * 0.44
+          };
+          mCtx.beginPath();
+          mCtx.moveTo(pts[mcpA].x, pts[mcpA].y);
+          mCtx.lineTo(wA.x, wA.y);
+          mCtx.lineTo(wB.x, wB.y);
+          mCtx.lineTo(pts[mcpB].x, pts[mcpB].y);
+          mCtx.closePath();
+          mCtx.fill();
+        };
+
+        // Fleshy thenar web between thumb and index
+        mCtx.beginPath();
+        mCtx.moveTo(pts[1].x, pts[1].y);
+        mCtx.lineTo(pts[2].x, pts[2].y);
+        mCtx.lineTo(pts[3].x, pts[3].y);
+        mCtx.lineTo(pts[5].x, pts[5].y);
+        mCtx.closePath();
+        mCtx.fill();
+
+        addWebbing(5, 6, 9, 10);    // Index - Middle web
+        addWebbing(9, 10, 13, 14);  // Middle - Ring web
+        addWebbing(13, 14, 17, 18); // Ring - Pinky web
+
+        // 4. Smooth, anatomically tapered finger capsules (natural continuous fingers)
+        const palmDist = Math.hypot(pts[9].x - pts[0].x, pts[9].y - pts[0].y);
+        const handScale = Math.max(0.72, Math.min(1.55, palmDist / 115));
+
         const fingerChains = [
-          [1, 2, 3, 4],     // Thumb
-          [5, 6, 7, 8],     // Index
-          [9, 10, 11, 12],  // Middle
-          [13, 14, 15, 16], // Ring
-          [17, 18, 19, 20]  // Pinky
+          { chain: [1, 2, 3, 4], baseW: 35 * handScale, tipW: 28 * handScale },    // Thumb
+          { chain: [5, 6, 7, 8], baseW: 28 * handScale, tipW: 22 * handScale },    // Index
+          { chain: [9, 10, 11, 12], baseW: 29 * handScale, tipW: 22 * handScale }, // Middle
+          { chain: [13, 14, 15, 16], baseW: 27 * handScale, tipW: 21 * handScale },// Ring
+          { chain: [17, 18, 19, 20], baseW: 24 * handScale, tipW: 19 * handScale } // Pinky
         ];
 
-        const palmDist = Math.hypot(pts[9].x - pts[0].x, pts[9].y - pts[0].y);
-        const handScale = Math.max(0.65, Math.min(1.75, palmDist / 120));
-
-        for (let f = 0; f < fingerChains.length; f++) {
-          const chain = fingerChains[f];
-          const baseWidth = (f === 0 ? 36 : (f === 4 ? 24 : 28)) * handScale;
-          for (let s = 0; s < chain.length - 1; s++) {
-            const p1 = pts[chain[s]];
-            const p2 = pts[chain[s + 1]];
-            const segWidth = baseWidth * (1.0 - s * 0.14);
-            mCtx.lineWidth = segWidth;
+        for (const f of fingerChains) {
+          const numSegs = f.chain.length - 1;
+          for (let s = 0; s < numSegs; s++) {
+            const p1 = pts[f.chain[s]];
+            const p2 = pts[f.chain[s + 1]];
+            const t = s / numSegs;
+            const segW = f.baseW * (1 - t) + f.tipW * t;
+            mCtx.lineWidth = segW;
             mCtx.beginPath();
             mCtx.moveTo(p1.x, p1.y);
             mCtx.lineTo(p2.x, p2.y);
             mCtx.stroke();
           }
-        }
-
-        // Circular Joint and Tip Caps
-        for (let i = 0; i < 21; i++) {
-          const rad = (i === 4 || i === 8 || i === 12 || i === 16 || i === 20 ? 13 : 15) * handScale;
-          mCtx.beginPath();
-          mCtx.arc(pts[i].x, pts[i].y, rad, 0, Math.PI * 2);
-          mCtx.fill();
         }
 
         mCtx.restore();
@@ -1104,24 +1146,24 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         mCtx.drawImage(videoEl, offsetX, offsetY, renderW, renderH);
         mCtx.restore();
 
-        // Draw the real masked hand onto main canvas with soft natural contact shadow
+        // Draw masked real hand with subtle natural ambient shadow
         ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
-        ctx.shadowBlur = 12;
-        ctx.shadowOffsetY = 4;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 8;
+        ctx.shadowOffsetY = 2;
         ctx.drawImage(offscreenHandCanvas, 0, 0);
         ctx.restore();
       } else {
         // Holographic Cyber Hand fallback if video isn't ready
         mCtx.save();
         mCtx.globalCompositeOperation = 'source-in';
-        mCtx.fillStyle = 'rgba(56, 189, 248, 0.38)';
+        mCtx.fillStyle = 'rgba(56, 189, 248, 0.35)';
         mCtx.fillRect(0, 0, width, height);
         mCtx.restore();
 
         ctx.save();
         ctx.shadowColor = '#38bdf8';
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = 12;
         ctx.drawImage(offscreenHandCanvas, 0, 0);
         ctx.restore();
       }
@@ -1830,8 +1872,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         // 2c. Canvas Quad on Desk: Visualizes ONLY Piano Keys or Tiles Pads (t = [0.0, 1.0])
         ctx.save();
         const bgGrad = ctx.createLinearGradient((p1.x + p4.x) / 2, (p1.y + p4.y) / 2, (p2.x + p3.x) / 2, (p2.y + p3.y) / 2);
-        bgGrad.addColorStop(0, 'rgba(10, 15, 28, 0.88)');
-        bgGrad.addColorStop(1, 'rgba(15, 23, 42, 0.94)');
+        bgGrad.addColorStop(0, 'rgba(10, 15, 28, 0.52)');
+        bgGrad.addColorStop(1, 'rgba(15, 23, 42, 0.62)');
         ctx.fillStyle = bgGrad;
         ctx.beginPath();
         ctx.moveTo(p1.x, p1.y);
@@ -1913,9 +1955,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
               ctx.shadowBlur = 18 * hp;
             } else {
-              keyGrad.addColorStop(0, '#ffffff');
-              keyGrad.addColorStop(0.8, '#f1f5f9');
-              keyGrad.addColorStop(1, '#cbd5e1');
+              keyGrad.addColorStop(0, 'rgba(255, 255, 255, 0.88)');
+              keyGrad.addColorStop(0.8, 'rgba(241, 245, 249, 0.82)');
+              keyGrad.addColorStop(1, 'rgba(203, 213, 225, 0.76)');
             }
             ctx.fillStyle = keyGrad;
             ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#facc15' : '#38bdf8') : '#475569';
@@ -1995,10 +2037,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 ctx.shadowBlur = 16 * (1 - hitAnim.progress);
                 ctx.lineWidth = 2.0;
               } else {
-                ctx.fillStyle = '#090d16';
+                ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
                 ctx.strokeStyle = '#64748b';
-                ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
-                ctx.shadowBlur = 8;
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+                ctx.shadowBlur = 6;
                 ctx.lineWidth = 1.2;
               }
               ctx.beginPath();
@@ -2082,10 +2124,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
               ctx.shadowBlur = 20 * hp;
             } else {
-              padGrad.addColorStop(0, '#1e293b');
-              padGrad.addColorStop(0.4, '#0f172a');
-              padGrad.addColorStop(1, '#020617');
-              ctx.shadowColor = 'rgba(255, 255, 255, 0.35)';
+              padGrad.addColorStop(0, 'rgba(30, 41, 59, 0.62)');
+              padGrad.addColorStop(0.4, 'rgba(15, 23, 42, 0.68)');
+              padGrad.addColorStop(1, 'rgba(2, 6, 23, 0.74)');
+              ctx.shadowColor = 'rgba(56, 189, 248, 0.25)';
               ctx.shadowBlur = 8;
             }
 
