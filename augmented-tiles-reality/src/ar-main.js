@@ -974,8 +974,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       // v is position along depth axis (0 at Hit Line p1..p2, 1 at front p4..p3)
       const v = ((pt.x - topMidX) * dyX + (pt.y - topMidY) * dyY) / depthSq;
 
-      // Generous vertical tolerance [-0.7 to 2.2] so fingers resting, hovering or pressing are captured
-      if (v < -0.7 || v > 2.2) return -1;
+      // Focused vertical tolerance [-0.3 to 1.35] ensuring fingers must be on or immediately near the piano
+      if (v < -0.3 || v > 1.35) return -1;
 
       const clampedV = Math.max(0, Math.min(1, v));
       // Interpolate left and right boundaries at depth v
@@ -1743,13 +1743,34 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         // In 'down' mode: runway extends into distance up to t = -3.0
         ctx.save();
         const runwayT = isUp ? 3.2 : -3.0;
+        const hitEdgeT = isUp ? 1.0 : 0.0;
         const spawnL = getPerspectivePoint(0, runwayT);
         const spawnR = getPerspectivePoint(1.0, runwayT);
 
-        // Faint outer runway guide rails
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-        ctx.lineWidth = 1.8;
-        ctx.setLineDash([8, 6]);
+        // 1. Subtle alternating lane highway columns on the desk surface
+        for (let i = 0; i < numLanes; i++) {
+          const u0 = i / numLanes;
+          const u1 = (i + 1) / numLanes;
+          const s0 = getPerspectivePoint(u0, runwayT);
+          const s1 = getPerspectivePoint(u1, runwayT);
+          const e1 = getPerspectivePoint(u1, hitEdgeT);
+          const e0 = getPerspectivePoint(u0, hitEdgeT);
+
+          ctx.beginPath();
+          ctx.moveTo(s0.x, s0.y);
+          ctx.lineTo(s1.x, s1.y);
+          ctx.lineTo(e1.x, e1.y);
+          ctx.lineTo(e0.x, e0.y);
+          ctx.closePath();
+          ctx.fillStyle = i % 2 === 0 ? 'rgba(56, 189, 248, 0.045)' : 'rgba(129, 140, 248, 0.035)';
+          ctx.fill();
+        }
+
+        // 2. Outer runway guide rails with neon glow
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 2.2;
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 8;
         ctx.beginPath();
         ctx.moveTo(spawnL.x, spawnL.y);
         ctx.lineTo(isUp ? p4.x : p1.x, isUp ? p4.y : p1.y);
@@ -1757,26 +1778,27 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.lineTo(isUp ? p3.x : p2.x, isUp ? p3.y : p2.y);
         ctx.stroke();
 
-        // Faint perspective lane divider tracks streaming to the keys
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([4, 6]);
+        // 3. Clear, crisp perspective lane divider tracks streaming to keys
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)';
+        ctx.lineWidth = 1.6;
+        ctx.setLineDash([6, 5]);
         for (let i = 1; i < numLanes; i++) {
           const u = i / numLanes;
           const sPt = getPerspectivePoint(u, runwayT);
-          const ePt = getPerspectivePoint(u, isUp ? 1.0 : 0.0);
+          const ePt = getPerspectivePoint(u, hitEdgeT);
           ctx.beginPath();
           ctx.moveTo(sPt.x, sPt.y);
           ctx.lineTo(ePt.x, ePt.y);
           ctx.stroke();
         }
 
-        // Spawn portal line in the distance
-        ctx.strokeStyle = 'rgba(129, 140, 248, 0.75)';
-        ctx.lineWidth = 2.5;
+        // 4. Spawn portal line in distance
+        ctx.strokeStyle = 'rgba(129, 140, 248, 0.85)';
+        ctx.lineWidth = 3.0;
         ctx.setLineDash([]);
         ctx.shadowColor = '#818cf8';
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 12;
         ctx.beginPath();
         ctx.moveTo(spawnL.x, spawnL.y);
         ctx.lineTo(spawnR.x, spawnR.y);
@@ -1896,9 +1918,39 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         drawCornerBrackets([p1, p2, p3, p4], 20, '#38bdf8');
         ctx.restore();
 
+        // Detect active lane hover from real hands to illuminate virtual keys under fingers
+        const activeHoverLanes = new Set();
+        if (Array.isArray(hands) && hands.length > 0 && corners) {
+          const fingerDefs = [
+            { key: 'thumbTip', camKey: 'cameraThumbTip' },
+            { key: 'indexTip', camKey: 'cameraIndexTip' },
+            { key: 'middleTip', camKey: 'cameraMiddleTip' },
+            { key: 'ringTip', camKey: 'cameraRingTip' },
+            { key: 'pinkyTip', camKey: 'cameraPinkyTip' }
+          ];
+          for (const h of hands) {
+            for (const f of fingerDefs) {
+              const pt = getScreenPoint(h[f.camKey], h[f.key], width, height);
+              if (pt) {
+                const lane = getLaneFromScreenPoint(pt, corners, viewMode === 'roll' ? 14 : numLanes);
+                if (lane >= 0) activeHoverLanes.add(lane);
+              }
+            }
+          }
+        }
+
+        // In 'down' mode: notes fall from distance (t < 0) into hit line at t = 0.0.
+        // Piano orientation: black keys at t = 0.0, white key tips at t = 1.0.
+        // In 'up' mode: notes flow from player (t > 1) into hit line at t = 1.0.
+        // Piano orientation flips ("puter balik"): black keys at t = 1.0, white key tips at t = 0.0.
+        const keyBaseT = isUp ? 1.0 : 0.0;
+        const keyTipT  = isUp ? 0.0 : 1.0;
+        const blackKeyTipT = isUp ? 0.38 : 0.62;
+        const labelT   = isUp ? 0.15 : 0.85;
+
         // Render the Keys inside [p1..p4]
         if (viewMode === 'roll') {
-          // Real Piano: 14 White keys (t = [0.0, 1.0]) & 10 Black keys (t = [0.0, 0.62])
+          // Real Piano: 14 White keys & 10 Black keys
           const numWhite = 14;
 
           // 1. White keys (Ivory)
@@ -1907,17 +1959,18 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             const u1 = ((k + 1) / numWhite) - 0.005;
             const kMidi = WHITE_KEY_MIDIS[k];
             const hitAnim = getActiveKeyHit(k) || getActiveKeyHit(kMidi);
+            const isHover = activeHoverLanes.has(k) || activeHoverLanes.has(kMidi);
 
             const sink = hitAnim ? Math.sin(hitAnim.progress * Math.PI) * 7.0 : 0;
-            const kwTL = getPerspectivePoint(u0, 0.0);
-            const kwTR = getPerspectivePoint(u1, 0.0);
-            const kwBR = getPerspectivePoint(u1, 1.0);
-            const kwBL = getPerspectivePoint(u0, 1.0);
-            kwBL.y += sink;
-            kwBR.y += sink;
+            const kwBaseL = getPerspectivePoint(u0, keyBaseT);
+            const kwBaseR = getPerspectivePoint(u1, keyBaseT);
+            const kwTipR  = getPerspectivePoint(u1, keyTipT);
+            const kwTipL  = getPerspectivePoint(u0, keyTipT);
+            kwTipL.y += sink;
+            kwTipR.y += sink;
 
             ctx.save();
-            const keyGrad = ctx.createLinearGradient((kwTL.x + kwTR.x) / 2, (kwTL.y + kwTR.y) / 2, (kwBL.x + kwBR.x) / 2, (kwBL.y + kwBR.y) / 2);
+            const keyGrad = ctx.createLinearGradient((kwBaseL.x + kwBaseR.x) / 2, (kwBaseL.y + kwBaseR.y) / 2, (kwTipL.x + kwTipR.x) / 2, (kwTipL.y + kwTipR.y) / 2);
             if (hitAnim) {
               const hp = 1 - hitAnim.progress;
               if (hitAnim.isChord) {
@@ -1931,26 +1984,43 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               }
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
               ctx.shadowBlur = 14 * hp;
+            } else if (isHover) {
+              // Real-time hover illumination when camera sees player's finger above key
+              keyGrad.addColorStop(0, 'rgba(224, 242, 254, 0.98)');
+              keyGrad.addColorStop(0.5, 'rgba(186, 230, 253, 0.92)');
+              keyGrad.addColorStop(1, 'rgba(56, 189, 248, 0.45)');
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 12;
             } else {
               keyGrad.addColorStop(0, 'rgba(255, 255, 255, 0.88)');
               keyGrad.addColorStop(0.8, 'rgba(241, 245, 249, 0.82)');
               keyGrad.addColorStop(1, 'rgba(203, 213, 225, 0.76)');
             }
             ctx.fillStyle = keyGrad;
-            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#facc15' : '#38bdf8') : '#475569';
-            ctx.lineWidth = hitAnim ? 2.2 : 1.2;
+            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#facc15' : '#38bdf8') : (isHover ? '#38bdf8' : '#475569');
+            ctx.lineWidth = hitAnim ? 2.2 : (isHover ? 2.0 : 1.2);
             ctx.beginPath();
-            ctx.moveTo(kwTL.x, kwTL.y);
-            ctx.lineTo(kwTR.x, kwTR.y);
-            ctx.lineTo(kwBR.x, kwBR.y);
-            ctx.lineTo(kwBL.x, kwBL.y);
+            ctx.moveTo(kwBaseL.x, kwBaseL.y);
+            ctx.lineTo(kwBaseR.x, kwBaseR.y);
+            ctx.lineTo(kwTipR.x, kwTipR.y);
+            ctx.lineTo(kwTipL.x, kwTipL.y);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
+
+            // Note pitch label near key tip
+            const labelPt = getPerspectivePoint((u0 + u1) / 2, labelT);
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = isHover ? '#0284c7' : '#64748b';
+            ctx.font = 'bold 10px "Outfit", sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const whiteKeyNames = ['C3','D3','E3','F3','G3','A3','B3','C4','D4','E4','F4','G4','A4','B4'];
+            ctx.fillText(whiteKeyNames[k] || '', labelPt.x, labelPt.y);
             ctx.restore();
           }
 
-          // 2. Black keys (Ebony, t = [0.0, 0.62])
+          // 2. Black keys (Ebony)
           const blackIndices = [0, 1, 3, 4, 5, 7, 8, 10, 11, 12];
           for (const bIdx of blackIndices) {
             if (bIdx + 1 < numWhite) {
@@ -1959,14 +2029,15 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               const u1 = midU + 0.022;
               const bMidi = BLACK_KEY_MIDIS[bIdx];
               const hitAnim = getActiveKeyHit(bMidi);
+              const isHover = activeHoverLanes.has(bMidi);
               const sink = hitAnim ? Math.sin(hitAnim.progress * Math.PI) * 6.0 : 0;
 
-              const kbTL = getPerspectivePoint(u0, 0.0);
-              const kbTR = getPerspectivePoint(u1, 0.0);
-              const kbBR = getPerspectivePoint(u1, 0.62);
-              const kbBL = getPerspectivePoint(u0, 0.62);
-              kbBL.y += sink;
-              kbBR.y += sink;
+              const kbBaseL = getPerspectivePoint(u0, keyBaseT);
+              const kbBaseR = getPerspectivePoint(u1, keyBaseT);
+              const kbTipR  = getPerspectivePoint(u1, blackKeyTipT);
+              const kbTipL  = getPerspectivePoint(u0, blackKeyTipT);
+              kbTipL.y += sink;
+              kbTipR.y += sink;
 
               ctx.save();
               if (hitAnim) {
@@ -1975,6 +2046,12 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
                 ctx.shadowBlur = 14 * (1 - hitAnim.progress);
                 ctx.lineWidth = 2.0;
+              } else if (isHover) {
+                ctx.fillStyle = '#0f172a';
+                ctx.strokeStyle = '#38bdf8';
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 12;
+                ctx.lineWidth = 1.8;
               } else {
                 ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
                 ctx.strokeStyle = '#64748b';
@@ -1983,10 +2060,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 ctx.lineWidth = 1.2;
               }
               ctx.beginPath();
-              ctx.moveTo(kbTL.x, kbTL.y);
-              ctx.lineTo(kbTR.x, kbTR.y);
-              ctx.lineTo(kbBR.x, kbBR.y);
-              ctx.lineTo(kbBL.x, kbBL.y);
+              ctx.moveTo(kbBaseL.x, kbBaseL.y);
+              ctx.lineTo(kbBaseR.x, kbBaseR.y);
+              ctx.lineTo(kbTipR.x, kbTipR.y);
+              ctx.lineTo(kbTipL.x, kbTipL.y);
               ctx.closePath();
               ctx.fill();
               ctx.stroke();
@@ -1994,23 +2071,24 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             }
           }
         } else {
-          // Piano Tiles: Monochrome pads (t = [0.0, 1.0])
+          // Piano Tiles: Monochrome pads
           for (let l = 0; l < numLanes; l++) {
             const isLeft = l < (numLanes / 2);
             const u0 = (l / numLanes) + 0.015;
             const u1 = ((l + 1) / numLanes) - 0.015;
             const hitAnim = getActiveKeyHit(l);
+            const isHover = activeHoverLanes.has(l);
             const sink = hitAnim ? Math.sin(hitAnim.progress * Math.PI) * 7.0 : 0;
 
-            const pTL = getPerspectivePoint(u0, 0.0);
-            const pTR = getPerspectivePoint(u1, 0.0);
-            const pBR = getPerspectivePoint(u1, 1.0);
-            const pBL = getPerspectivePoint(u0, 1.0);
-            pBL.y += sink;
-            pBR.y += sink;
+            const pBaseL = getPerspectivePoint(u0, keyBaseT);
+            const pBaseR = getPerspectivePoint(u1, keyBaseT);
+            const pTipR  = getPerspectivePoint(u1, keyTipT);
+            const pTipL  = getPerspectivePoint(u0, keyTipT);
+            pTipL.y += sink;
+            pTipR.y += sink;
 
             ctx.save();
-            const padGrad = ctx.createLinearGradient((pTL.x + pTR.x) / 2, (pTL.y + pTR.y) / 2, (pBL.x + pBR.x) / 2, (pBL.y + pBR.y) / 2);
+            const padGrad = ctx.createLinearGradient((pBaseL.x + pBaseR.x) / 2, (pBaseL.y + pBaseR.y) / 2, (pTipL.x + pTipR.x) / 2, (pTipL.y + pTipR.y) / 2);
             if (hitAnim) {
               const hp = 1 - hitAnim.progress;
               if (hitAnim.isChord) {
@@ -2024,6 +2102,12 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               }
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
               ctx.shadowBlur = 16 * hp;
+            } else if (isHover) {
+              padGrad.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
+              padGrad.addColorStop(0.5, 'rgba(14, 165, 233, 0.35)');
+              padGrad.addColorStop(1, 'rgba(2, 6, 23, 0.74)');
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 14;
             } else {
               padGrad.addColorStop(0, 'rgba(30, 41, 59, 0.62)');
               padGrad.addColorStop(0.4, 'rgba(15, 23, 42, 0.68)');
@@ -2033,19 +2117,19 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             }
 
             ctx.fillStyle = padGrad;
-            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#fde047' : '#38bdf8') : '#f8fafc';
-            ctx.lineWidth = hitAnim ? 3.2 : 2;
+            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#fde047' : '#38bdf8') : (isHover ? '#38bdf8' : '#f8fafc');
+            ctx.lineWidth = hitAnim ? 3.2 : (isHover ? 2.5 : 2);
             ctx.beginPath();
-            ctx.moveTo(pTL.x, pTL.y);
-            ctx.lineTo(pTR.x, pTR.y);
-            ctx.lineTo(pBR.x, pBR.y);
-            ctx.lineTo(pBL.x, pBL.y);
+            ctx.moveTo(pBaseL.x, pBaseL.y);
+            ctx.lineTo(pBaseR.x, pBaseR.y);
+            ctx.lineTo(pTipR.x, pTipR.y);
+            ctx.lineTo(pTipL.x, pTipL.y);
             ctx.closePath();
             ctx.fill();
             ctx.stroke();
 
-            const padMidX = (pTL.x + pTR.x + pBL.x + pBR.x) / 4;
-            const padMidY = (pTL.y + pTR.y + pBL.y + pBR.y) / 4;
+            const padMidX = (pBaseL.x + pBaseR.x + pTipL.x + pTipR.x) / 4;
+            const padMidY = (pBaseL.y + pBaseR.y + pTipL.y + pTipR.y) / 4;
             ctx.shadowBlur = 0;
             ctx.fillStyle = '#ffffff';
             ctx.font = 'bold 13px "Outfit", sans-serif';
@@ -2057,10 +2141,62 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           }
         }
 
-        // 2d. The Hit Line (Positioned along p1 -> p2 at the back of the piano keyboard)
-        const hitL = getPerspectivePoint(0, isUp ? 1.0 : 0.0);
-        const hitR = getPerspectivePoint(1.0, isUp ? 1.0 : 0.0);
+        // 2d. The Hit Line & Target Focus Receptors (Crystal-clear focal points for every lane)
+        const hitT = isUp ? 1.0 : 0.0;
+        const hitL = getPerspectivePoint(0, hitT);
+        const hitR = getPerspectivePoint(1.0, hitT);
 
+        // A. Lane Target Receptor Focus Markers at the Hit Line
+        for (let l = 0; l < numLanes; l++) {
+          const u0 = l / numLanes;
+          const u1 = (l + 1) / numLanes;
+          const rL = getPerspectivePoint(u0, hitT);
+          const rR = getPerspectivePoint(u1, hitT);
+
+          // Check if any note in this lane is approaching within 0.25s
+          const approaching = chart?.notes?.some(n =>
+            !n.played && !n.missed &&
+            (n.lane === l || (Array.isArray(n.notes) && n.notes.some(sub => sub.lane === l))) &&
+            Math.abs(n.timeSec - currentTimeSec) <= 0.25
+          );
+
+          ctx.save();
+          if (approaching) {
+            // Pulsing target receptor box
+            ctx.strokeStyle = '#facc15';
+            ctx.lineWidth = 3.5;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.moveTo(rL.x, rL.y);
+            ctx.lineTo(rR.x, rR.y);
+            ctx.stroke();
+
+            // Glowing target bracket zone
+            const boxDepthT = isUp ? (hitT - 0.12) : (hitT + 0.12);
+            const bL = getPerspectivePoint(u0, boxDepthT);
+            const bR = getPerspectivePoint(u1, boxDepthT);
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.32)';
+            ctx.beginPath();
+            ctx.moveTo(rL.x, rL.y);
+            ctx.lineTo(rR.x, rR.y);
+            ctx.lineTo(bR.x, bR.y);
+            ctx.lineTo(bL.x, bL.y);
+            ctx.closePath();
+            ctx.fill();
+          } else {
+            // Subtle target tick frame
+            ctx.strokeStyle = 'rgba(250, 204, 21, 0.45)';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(rL.x, rL.y);
+            ctx.lineTo(rR.x, rR.y);
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+
+        // B. Main Glowing Hit Line
         ctx.save();
         ctx.strokeStyle = '#facc15';
         ctx.lineWidth = 4;
@@ -2099,9 +2235,60 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           ctx.restore();
         }
 
-        // ponytail: hand compositing disabled — destination-out creates stripe artifacts, not natural.
-        // Upgrade path: use a separate off-screen canvas with the webcam feed for proper hand reveal.
-        // renderRealHandsOnKeyboard(ctx, hands, width, height, corners);
+        // 2e. AR Real-Time Holographic Fingertip Trackers
+        // Bridges camera hand detection with the virtual piano canvas
+        if (Array.isArray(hands) && hands.length > 0 && corners) {
+          const fingerDefs = [
+            { key: 'thumbTip', camKey: 'cameraThumbTip' },
+            { key: 'indexTip', camKey: 'cameraIndexTip' },
+            { key: 'middleTip', camKey: 'cameraMiddleTip' },
+            { key: 'ringTip', camKey: 'cameraRingTip' },
+            { key: 'pinkyTip', camKey: 'cameraPinkyTip' }
+          ];
+
+          for (const h of hands) {
+            for (const f of fingerDefs) {
+              const screenPt = getScreenPoint(h[f.camKey], h[f.key], width, height);
+              if (!screenPt) continue;
+
+              const lane = getLaneFromScreenPoint(screenPt, corners, numLanes);
+              const isOverPiano = lane >= 0;
+
+              ctx.save();
+              if (isOverPiano) {
+                // Active hover over virtual piano lane!
+                const pulse = 1 + Math.sin(time / 90) * 0.15;
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 2.4;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 14;
+                ctx.beginPath();
+                ctx.arc(screenPt.x, screenPt.y, 10 * pulse, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Bright center core
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(screenPt.x, screenPt.y, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Small lane indicator badge above finger
+                ctx.font = 'bold 10px "Outfit", sans-serif';
+                ctx.fillStyle = '#38bdf8';
+                ctx.textAlign = 'center';
+                ctx.fillText(`L${lane + 1}`, screenPt.x, screenPt.y - 15);
+              } else {
+                // Subtle tracking dot when hand is on desk outside piano
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.40)';
+                ctx.beginPath();
+                ctx.arc(screenPt.x, screenPt.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              ctx.restore();
+            }
+          }
+        }
       }
     }
 
