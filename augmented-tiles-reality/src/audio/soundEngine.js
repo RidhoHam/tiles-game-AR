@@ -455,6 +455,7 @@ export class SoundEngine {
   }
 
   playFeedback(judgement) {
+    if (this.enableFeedback === false) return null;
     if (!this.ctx || !judgement || typeof judgement !== 'string') return null;
     if (typeof this.ctx.createOscillator !== 'function') return null;
 
@@ -463,8 +464,6 @@ export class SoundEngine {
     const type = judgement.toUpperCase();
 
     if (type === 'PERFECT') {
-      // Harmonic crystal chime:
-      // Sparkling high-frequency interval (C7 ~2093Hz and G7 ~3136Hz)
       const osc1 = this.ctx.createOscillator();
       const osc2 = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
@@ -510,8 +509,6 @@ export class SoundEngine {
     }
 
     if (type === 'GOOD') {
-      // Soft chime:
-      // Warm, gentle bell tone at E6 (~1318.5Hz)
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
 
@@ -548,8 +545,6 @@ export class SoundEngine {
     }
 
     if (type === 'MISS') {
-      // Low-frequency thud:
-      // Pitch drop from 130Hz to 45Hz with short muffled punch
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
 

@@ -25,11 +25,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let isCameraMirrored = localStorage.getItem('ar_camera_mirrored') !== 'false'; // Default TRUE (mirrored webcam)
 
     let savedFlowDir = localStorage.getItem('ar_flow_direction');
-    if (!savedFlowDir || savedFlowDir === 'down') {
-      savedFlowDir = 'up';
-      localStorage.setItem('ar_flow_direction', 'up');
+    if (!savedFlowDir || savedFlowDir === 'up') {
+      savedFlowDir = 'down';
+      localStorage.setItem('ar_flow_direction', 'down');
     }
-    let flowDirection = savedFlowDir; // Default: 'up' (Bawah ke Atas - berlawanan arah dengan tangan)
+    let flowDirection = savedFlowDir || 'down'; // Default: 'down' (Atas ke Bawah - standard falling notes)
 
     function isValidCorners(c) {
       return Boolean(
@@ -249,9 +249,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       }
       saveCanvasCorners();
       try {
-        soundEngine.init().then(() => {
-          soundEngine.playFeedback('PERFECT');
-        }).catch(() => {});
+        soundEngine.init().catch(() => {});
       } catch (e) {}
 
       arScene.confirmPlacement();
@@ -464,6 +462,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               durationSec: Math.max(...chartNotes.map(n => n.timeSec + n.durationSec)) + 2.0,
               notes: chartNotes
             };
+            tagChordsInChart(currentChart);
             loadedCustomChart = currentChart;
             selectedSongId = 'imported_midi';
 
@@ -640,32 +639,62 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       }
     }
 
+    function tagChordsInChart(chart) {
+      if (!chart || !Array.isArray(chart.notes)) return chart;
+      const CHORD_TIME_WINDOW = 0.045; // 45ms window for polyphonic chords
+      const notes = chart.notes;
+
+      for (let i = 0; i < notes.length; i++) {
+        const n = notes[i];
+        if (n.type === 'chord' || Array.isArray(n.notes)) {
+          n.isChord = true;
+          n.chordSize = Array.isArray(n.notes) ? n.notes.length : 2;
+          continue;
+        }
+        const sim = notes.filter(m => Math.abs(m.timeSec - n.timeSec) <= CHORD_TIME_WINDOW);
+        if (sim.length >= 2) {
+          n.isChord = true;
+          n.chordSize = sim.length;
+          n.type = 'chord';
+          n.chordGroup = sim;
+        } else {
+          n.isChord = false;
+        }
+      }
+      return chart;
+    }
+
     function adaptChartToLanes(chart, targetLanes) {
-      if (!chart || chart.lanes === targetLanes) return chart;
-      const srcLanes = chart.lanes || 8;
-      const adaptedNotes = (chart.notes || []).map(note => {
-        const newLane = Math.min(targetLanes - 1, Math.max(0, Math.floor((note.lane / srcLanes) * targetLanes)));
-        const subNotes = note.notes ? note.notes.map(sn => ({
-          ...sn,
-          lane: Math.min(targetLanes - 1, Math.max(0, Math.floor((sn.lane / srcLanes) * targetLanes)))
-        })) : null;
-        return {
-          ...note,
-          lane: newLane,
-          hand: newLane < (targetLanes / 2) ? 'left' : 'right',
-          notes: subNotes
+      if (!chart) return chart;
+      let adapted = chart;
+      if (chart.lanes !== targetLanes) {
+        const srcLanes = chart.lanes || 8;
+        const adaptedNotes = (chart.notes || []).map(note => {
+          const newLane = Math.min(targetLanes - 1, Math.max(0, Math.floor((note.lane / srcLanes) * targetLanes)));
+          const subNotes = note.notes ? note.notes.map(sn => ({
+            ...sn,
+            lane: Math.min(targetLanes - 1, Math.max(0, Math.floor((sn.lane / srcLanes) * targetLanes)))
+          })) : null;
+          return {
+            ...note,
+            lane: newLane,
+            hand: newLane < (targetLanes / 2) ? 'left' : 'right',
+            notes: subNotes
+          };
+        });
+        adapted = {
+          ...chart,
+          lanes: targetLanes,
+          notes: adaptedNotes
         };
-      });
-      return {
-        ...chart,
-        lanes: targetLanes,
-        notes: adaptedNotes
-      };
+      }
+      return tagChordsInChart(adapted);
     }
 
     async function prepareSongChart() {
       if (selectedSongId === 'imported_midi' && loadedCustomChart) {
         currentChart = adaptChartToLanes(loadedCustomChart, selectedLanes);
+        tagChordsInChart(currentChart);
         arScene.setViewMode(currentViewMode);
         const titleEl = document.getElementById('hud-song-title');
         if (titleEl) titleEl.innerText = currentChart.title;
@@ -677,6 +706,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
       const parsed = parseSongChart(songData, chartData);
       currentChart = adaptChartToLanes(parsed, selectedLanes);
+      tagChordsInChart(currentChart);
       arScene.setViewMode(currentViewMode);
 
       const titleEl = document.getElementById('hud-song-title');
@@ -803,7 +833,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         hit.note.played = true;
         hit.note.playedSound = true;
         soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec);
-        soundEngine.playFeedback(hit.judgement);
 
         const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
         arUI.showJudgement(hit.judgement, scoreRes.points);
@@ -822,11 +851,22 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       const notes = currentChart.notes;
       const goodWin = hitDetector.goodWindowSec || 0.12;
 
-      // Find all unhit notes currently around the hit bar
-      const hitCandidates = notes.filter(n =>
-        !n.played && !n.missed &&
-        Math.abs(n.timeSec - currentTimeSec) <= (goodWin * 1.8)
-      );
+      // In wait_chord mode, prioritize any chord currently stopping the song
+      let hitCandidates = [];
+      if (isWaitingForHit) {
+        const waitingNote = notes.find(n => !n.played && !n.missed);
+        if (waitingNote) {
+          const targetTime = waitingNote.timeSec;
+          hitCandidates = notes.filter(n => !n.played && !n.missed && Math.abs(n.timeSec - targetTime) <= 0.08);
+        }
+      }
+
+      if (hitCandidates.length === 0) {
+        hitCandidates = notes.filter(n =>
+          !n.played && !n.missed &&
+          Math.abs(n.timeSec - currentTimeSec) <= (goodWin * 1.8)
+        );
+      }
 
       if (hitCandidates.length > 0) {
         for (const note of hitCandidates) {
@@ -838,7 +878,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           arScene.triggerHitVFX(laneOrMidi, 'PERFECT');
         }
 
-        soundEngine.playFeedback('PERFECT');
         const scoreRes = arUI.scoreManager.recordHit('PERFECT', { isChord: true });
         arUI.showJudgement('PERFECT', scoreRes.points * hitCandidates.length);
         arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
@@ -1032,7 +1071,108 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       };
     }
 
+    function renderRealHandsOnKeyboard(ctx, hands, width, height, corners) {
+      if (!ctx || !Array.isArray(hands) || hands.length === 0 || !corners) return;
+      const { p1, p2, p3, p4 } = corners;
+      if (!p1 || !p2 || !p3 || !p4) return;
 
+      const minKeyY = Math.min(p1.y, p2.y) - 30;
+      const maxKeyY = Math.max(p3.y, p4.y) + 40;
+      const minKeyX = Math.min(p1.x, p4.x) - 40;
+      const maxKeyX = Math.max(p2.x, p3.x) + 40;
+
+      ctx.save();
+      // 1. Clip strictly to the virtual piano keyboard & immediate runway border
+      // This ensures 100% zero side effects, shadows, or cutouts on the physical desk outside the keys
+      ctx.beginPath();
+      ctx.moveTo(p1.x - 20, p1.y - 20);
+      ctx.lineTo(p2.x + 20, p2.y - 20);
+      ctx.lineTo(p3.x + 20, p3.y + 35);
+      ctx.lineTo(p4.x - 20, p4.y + 35);
+      ctx.closePath();
+      ctx.clip();
+
+      // 2. Punch through virtual key overlay so real webcam feed of hands shines through
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = '#000000';
+      ctx.strokeStyle = '#000000';
+
+      const FINGER_CHAINS = [
+        { chain: [1, 2, 3, 4], width: 34 },      // Thumb
+        { chain: [5, 6, 7, 8], width: 28 },      // Index
+        { chain: [9, 10, 11, 12], width: 28 },   // Middle
+        { chain: [13, 14, 15, 16], width: 26 },  // Ring
+        { chain: [17, 18, 19, 20], width: 23 }   // Pinky
+      ];
+
+      for (const hand of hands) {
+        const rawPts = hand.cameraLandmarks || hand.rawLandmarks;
+        if (!rawPts || rawPts.length < 21) continue;
+
+        const screenPts = rawPts.map(pt => {
+          if (hand.cameraLandmarks) {
+            return getScreenPoint(pt, null, width, height);
+          }
+          const camPt = {
+            x: isCameraMirrored ? (1.0 - (pt.x ?? 0.5)) : (pt.x ?? 0.5),
+            y: pt.y ?? 0.5
+          };
+          return getScreenPoint(camPt, null, width, height);
+        });
+
+        if (!screenPts[0] || !screenPts[9]) continue;
+
+        // Overlap test: does hand intersect keyboard bounds?
+        const hasOverlap = screenPts.some(pt => pt && pt.x >= minKeyX && pt.x <= maxKeyX && pt.y >= minKeyY && pt.y <= maxKeyY);
+        if (!hasOverlap) continue;
+
+        const palmDist = Math.hypot(screenPts[0].x - screenPts[9].x, screenPts[0].y - screenPts[9].y);
+        const scale = Math.max(0.75, Math.min(1.45, palmDist / 95));
+
+        // A. Palm Base Polygon
+        ctx.beginPath();
+        ctx.moveTo(screenPts[0].x, screenPts[0].y);
+        ctx.lineTo(screenPts[1].x, screenPts[1].y);
+        ctx.lineTo(screenPts[5].x, screenPts[5].y);
+        ctx.lineTo(screenPts[9].x, screenPts[9].y);
+        ctx.lineTo(screenPts[13].x, screenPts[13].y);
+        ctx.lineTo(screenPts[17].x, screenPts[17].y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Palm interior flesh
+        ctx.beginPath();
+        ctx.moveTo(screenPts[0].x, screenPts[0].y);
+        ctx.lineTo(screenPts[5].x, screenPts[5].y);
+        ctx.lineTo(screenPts[17].x, screenPts[17].y);
+        ctx.closePath();
+        ctx.fill();
+
+        // B. 5 Rounded Finger Segments
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        for (const { chain, width: baseW } of FINGER_CHAINS) {
+          const segW = baseW * scale;
+          ctx.lineWidth = segW;
+          ctx.beginPath();
+          ctx.moveTo(screenPts[chain[0]].x, screenPts[chain[0]].y);
+          for (let i = 1; i < chain.length; i++) {
+            ctx.lineTo(screenPts[chain[i]].x, screenPts[chain[i]].y);
+          }
+          ctx.stroke();
+
+          // Smooth rounded joint & tip circles
+          for (const idx of chain) {
+            ctx.beginPath();
+            ctx.arc(screenPts[idx].x, screenPts[idx].y, segW / 2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      ctx.restore();
+    }
 
     /**
      * Draws the 2D Spatial Gesture Overlay:
@@ -1957,6 +2097,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           ctx.fillText(msg, midHitX, midHitY);
           ctx.restore();
         }
+
+        // 2e. Natural Hand AR Compositing (User's real hands appear naturally on top of the virtual piano keys)
+        renderRealHandsOnKeyboard(ctx, hands, width, height, corners);
       }
     }
 
@@ -2238,7 +2381,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                   hit.note.played = true;
                   hit.note.playedSound = true;
                   soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
-                  soundEngine.playFeedback(hit.judgement);
 
                   const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
                   arUI.showJudgement(hit.judgement, scoreRes.points);
