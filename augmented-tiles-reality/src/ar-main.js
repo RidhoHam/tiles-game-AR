@@ -20,8 +20,12 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let currentChart = null;
     let loadedCustomChart = null;
 
-    let isCameraMirrored = localStorage.getItem('ar_camera_mirrored') !== 'false'; // Default TRUE (mirrored webcam)!
-    let flowDirection = localStorage.getItem('ar_flow_direction') || 'down'; // Default: 'down' (Atas ke Bawah - descending to keys)
+    let savedFlowDir = localStorage.getItem('ar_flow_direction');
+    if (!savedFlowDir || savedFlowDir === 'down') {
+      savedFlowDir = 'up';
+      localStorage.setItem('ar_flow_direction', 'up');
+    }
+    let flowDirection = savedFlowDir; // Default: 'up' (Bawah ke Atas - berlawanan arah dengan tangan)
 
     // Persisted holographic desk canvas corners for seamless gameplay alignment
     let persistedCanvasCorners = null;
@@ -943,230 +947,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         judgement: anim.judgement,
         isChord: anim.isChord
       };
-    }
-
-    // Offscreen canvas for compositing the player's physical hands on top of the virtual piano keys
-    let offscreenHandCanvas = null;
-    let offscreenHandCtx = null;
-
-    function renderRealHandForeground(ctx, hands, videoEl, width, height) {
-      if (!hands || hands.length === 0) return;
-
-      if (!offscreenHandCanvas) {
-        offscreenHandCanvas = document.createElement('canvas');
-        offscreenHandCtx = offscreenHandCanvas.getContext('2d');
-      }
-      if (offscreenHandCanvas.width !== width || offscreenHandCanvas.height !== height) {
-        offscreenHandCanvas.width = width;
-        offscreenHandCanvas.height = height;
-      }
-
-      const mCtx = offscreenHandCtx;
-      mCtx.clearRect(0, 0, width, height);
-
-      let hasDrawnSilhouette = false;
-
-      for (const hand of hands) {
-        const rawCam = hand.cameraLandmarks || (hand.rawLandmarks ? hand.rawLandmarks.map(p => ({
-          x: isCameraMirrored ? (1 - p.x) : p.x,
-          y: p.y
-        })) : null);
-
-        let pts = null;
-        if (rawCam && rawCam.length >= 21) {
-          pts = rawCam.map(p => getScreenPoint(p, null, width, height)).filter(Boolean);
-        }
-
-        if (!pts || pts.length < 21) {
-          const wristPt = getScreenPoint(hand.cameraWrist, hand.wrist, width, height);
-          const thumbPt = getScreenPoint(hand.cameraThumbTip, hand.thumbTip, width, height);
-          const indexPt = getScreenPoint(hand.cameraIndexTip, hand.indexTip, width, height);
-          const midPt = getScreenPoint(hand.cameraMiddleTip, hand.middleTip, width, height);
-          const ringPt = getScreenPoint(hand.cameraRingTip, hand.ringTip, width, height);
-          const pinkyPt = getScreenPoint(hand.cameraPinkyTip, hand.pinkyTip, width, height);
-          if (!wristPt) continue;
-
-          mCtx.save();
-          mCtx.fillStyle = '#ffffff';
-          mCtx.strokeStyle = '#ffffff';
-          mCtx.lineCap = 'round';
-          mCtx.lineJoin = 'round';
-
-          mCtx.beginPath();
-          mCtx.moveTo(wristPt.x, wristPt.y);
-          if (thumbPt) mCtx.lineTo(thumbPt.x, thumbPt.y);
-          if (indexPt) mCtx.lineTo(indexPt.x, indexPt.y);
-          if (midPt) mCtx.lineTo(midPt.x, midPt.y);
-          if (ringPt) mCtx.lineTo(ringPt.x, ringPt.y);
-          if (pinkyPt) mCtx.lineTo(pinkyPt.x, pinkyPt.y);
-          mCtx.closePath();
-          mCtx.fill();
-
-          const tips = [thumbPt, indexPt, midPt, ringPt, pinkyPt].filter(Boolean);
-          for (const tip of tips) {
-            mCtx.lineWidth = 30;
-            mCtx.beginPath();
-            mCtx.moveTo(wristPt.x, wristPt.y);
-            mCtx.lineTo(tip.x, tip.y);
-            mCtx.stroke();
-          }
-          mCtx.restore();
-          hasDrawnSilhouette = true;
-          continue;
-        }
-
-        mCtx.save();
-        mCtx.fillStyle = '#ffffff';
-        mCtx.strokeStyle = '#ffffff';
-        mCtx.lineCap = 'round';
-        mCtx.lineJoin = 'round';
-
-        // 1. Natural Forearm Extension (connects smoothly into the arm/sleeve, no severed wrist)
-        const armDirX = pts[0].x - pts[9].x;
-        const armDirY = pts[0].y - pts[9].y;
-        const armDirLen = Math.hypot(armDirX, armDirY) || 1;
-        const uDirX = armDirX / armDirLen;
-        const uDirY = armDirY / armDirLen;
-        const perpX = -uDirY;
-        const perpY = uDirX;
-        const halfArmW = Math.max(30, Math.hypot(pts[17].x - pts[1].x, pts[17].y - pts[1].y) * 0.48);
-        const armExtLen = 130;
-
-        const armExtL = { x: pts[0].x + uDirX * armExtLen - perpX * halfArmW, y: pts[0].y + uDirY * armExtLen - perpY * halfArmW };
-        const armExtR = { x: pts[0].x + uDirX * armExtLen + perpX * halfArmW, y: pts[0].y + uDirY * armExtLen + perpY * halfArmW };
-        const wristL = { x: pts[0].x - perpX * halfArmW, y: pts[0].y - perpY * halfArmW };
-        const wristR = { x: pts[0].x + perpX * halfArmW, y: pts[0].y + perpY * halfArmW };
-
-        // 2. Continuous Palm Body Polygon
-        mCtx.beginPath();
-        mCtx.moveTo(armExtL.x, armExtL.y);
-        mCtx.lineTo(wristL.x, wristL.y);
-        mCtx.lineTo(pts[1].x, pts[1].y);   // Thumb CMC
-        mCtx.lineTo(pts[2].x, pts[2].y);   // Thumb MCP
-        mCtx.lineTo(pts[5].x, pts[5].y);   // Index MCP
-        mCtx.lineTo(pts[9].x, pts[9].y);   // Middle MCP
-        mCtx.lineTo(pts[13].x, pts[13].y); // Ring MCP
-        mCtx.lineTo(pts[17].x, pts[17].y); // Pinky MCP
-        mCtx.lineTo(wristR.x, wristR.y);
-        mCtx.lineTo(armExtR.x, armExtR.y);
-        mCtx.closePath();
-        mCtx.fill();
-
-        // 3. Fleshy Interdigital Webbing between adjacent fingers
-        const addWebbing = (mcpA, pipA, mcpB, pipB) => {
-          const wA = {
-            x: pts[mcpA].x + (pts[pipA].x - pts[mcpA].x) * 0.44,
-            y: pts[mcpA].y + (pts[pipA].y - pts[mcpA].y) * 0.44
-          };
-          const wB = {
-            x: pts[mcpB].x + (pts[pipB].x - pts[mcpB].x) * 0.44,
-            y: pts[mcpB].y + (pts[pipB].y - pts[mcpB].y) * 0.44
-          };
-          mCtx.beginPath();
-          mCtx.moveTo(pts[mcpA].x, pts[mcpA].y);
-          mCtx.lineTo(wA.x, wA.y);
-          mCtx.lineTo(wB.x, wB.y);
-          mCtx.lineTo(pts[mcpB].x, pts[mcpB].y);
-          mCtx.closePath();
-          mCtx.fill();
-        };
-
-        // Fleshy thenar web between thumb and index
-        mCtx.beginPath();
-        mCtx.moveTo(pts[1].x, pts[1].y);
-        mCtx.lineTo(pts[2].x, pts[2].y);
-        mCtx.lineTo(pts[3].x, pts[3].y);
-        mCtx.lineTo(pts[5].x, pts[5].y);
-        mCtx.closePath();
-        mCtx.fill();
-
-        addWebbing(5, 6, 9, 10);    // Index - Middle web
-        addWebbing(9, 10, 13, 14);  // Middle - Ring web
-        addWebbing(13, 14, 17, 18); // Ring - Pinky web
-
-        // 4. Smooth, anatomically tapered finger capsules (natural continuous fingers)
-        const palmDist = Math.hypot(pts[9].x - pts[0].x, pts[9].y - pts[0].y);
-        const handScale = Math.max(0.72, Math.min(1.55, palmDist / 115));
-
-        const fingerChains = [
-          { chain: [1, 2, 3, 4], baseW: 35 * handScale, tipW: 28 * handScale },    // Thumb
-          { chain: [5, 6, 7, 8], baseW: 28 * handScale, tipW: 22 * handScale },    // Index
-          { chain: [9, 10, 11, 12], baseW: 29 * handScale, tipW: 22 * handScale }, // Middle
-          { chain: [13, 14, 15, 16], baseW: 27 * handScale, tipW: 21 * handScale },// Ring
-          { chain: [17, 18, 19, 20], baseW: 24 * handScale, tipW: 19 * handScale } // Pinky
-        ];
-
-        for (const f of fingerChains) {
-          const numSegs = f.chain.length - 1;
-          for (let s = 0; s < numSegs; s++) {
-            const p1 = pts[f.chain[s]];
-            const p2 = pts[f.chain[s + 1]];
-            const t = s / numSegs;
-            const segW = f.baseW * (1 - t) + f.tipW * t;
-            mCtx.lineWidth = segW;
-            mCtx.beginPath();
-            mCtx.moveTo(p1.x, p1.y);
-            mCtx.lineTo(p2.x, p2.y);
-            mCtx.stroke();
-          }
-        }
-
-        mCtx.restore();
-        hasDrawnSilhouette = true;
-      }
-
-      if (!hasDrawnSilhouette) return;
-
-      const hasLiveVideo = Boolean(videoEl && videoEl.readyState >= 2 && (videoEl.videoWidth || 0) > 0);
-
-      if (hasLiveVideo) {
-        const vw = videoEl.videoWidth || 640;
-        const vh = videoEl.videoHeight || 480;
-        const videoAspect = vw / vh;
-        const screenAspect = width / height;
-        let renderW, renderH, offsetX, offsetY;
-        if (screenAspect > videoAspect) {
-          renderW = width;
-          renderH = width / videoAspect;
-          offsetX = 0;
-          offsetY = (height - renderH) / 2;
-        } else {
-          renderH = height;
-          renderW = height * videoAspect;
-          offsetX = (width - renderW) / 2;
-          offsetY = 0;
-        }
-
-        mCtx.save();
-        mCtx.globalCompositeOperation = 'source-in';
-        if (isCameraMirrored) {
-          mCtx.translate(width, 0);
-          mCtx.scale(-1, 1);
-        }
-        mCtx.drawImage(videoEl, offsetX, offsetY, renderW, renderH);
-        mCtx.restore();
-
-        // Draw masked real hand with subtle natural ambient shadow
-        ctx.save();
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
-        ctx.shadowBlur = 8;
-        ctx.shadowOffsetY = 2;
-        ctx.drawImage(offscreenHandCanvas, 0, 0);
-        ctx.restore();
-      } else {
-        // Holographic Cyber Hand fallback if video isn't ready
-        mCtx.save();
-        mCtx.globalCompositeOperation = 'source-in';
-        mCtx.fillStyle = 'rgba(56, 189, 248, 0.35)';
-        mCtx.fillRect(0, 0, width, height);
-        mCtx.restore();
-
-        ctx.save();
-        ctx.shadowColor = '#38bdf8';
-        ctx.shadowBlur = 12;
-        ctx.drawImage(offscreenHandCanvas, 0, 0);
-        ctx.restore();
-      }
     }
 
     /**
@@ -2191,10 +1971,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.fillText('PERFECT ⚡', hitR.x + 10, hitR.y);
         ctx.restore();
 
-        // 2e. Real Hand Foreground Rendering: Composite the player's physical hands ON TOP of the piano keys!
-        renderRealHandForeground(ctx, hands, videoEl, width, height);
-
-
         // 2g. Holographic Energy Rings on ALL 10 Fingers (5 Left + 5 Right)
         if (hands && hands.length > 0) {
           for (const hand of hands) {
@@ -2261,7 +2037,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       let lastTime = performance.now();
       let lastVisionTimestamp = 0;
       let cachedHands = [];
-      const VISION_THROTTLE_MS = 16; // Low-latency 60 FPS vision tracking
+      const VISION_THROTTLE_MS = 33; // Smooth 30 FPS vision tracking with 60 FPS interpolated rendering
       let frameCount = 0;
       let lastFpsTime = performance.now();
       let lastThumbSlamTime = 0;
