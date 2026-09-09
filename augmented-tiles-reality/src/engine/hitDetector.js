@@ -21,6 +21,7 @@ export class HitDetector {
    * @param {number} [options.perfectWindowSec=0.050] - Timing window for PERFECT (±50ms)
    * @param {number} [options.goodWindowSec=0.120] - Timing window for GOOD (±120ms)
    * @param {number} [options.forgiveness=1.2] - Hitbox forgiveness factor to compensate tracking noise
+   * @param {number} [options.inputLatencyCompensationSec=0.040] - Latency compensation for input processing (40ms)
    */
   constructor(options = {}) {
     this.laneCount = options.laneCount ?? 4;
@@ -29,6 +30,15 @@ export class HitDetector {
     this.perfectWindowSec = options.perfectWindowSec ?? 0.050;
     this.goodWindowSec = options.goodWindowSec ?? 0.120;
     this.forgiveness = options.forgiveness ?? 1.2;
+    this._inputLatencyCompensationSec = options.inputLatencyCompensationSec ?? 0.040;
+  }
+
+  get inputLatencyCompensationSec() {
+    return this._inputLatencyCompensationSec;
+  }
+
+  set inputLatencyCompensationSec(val) {
+    this._inputLatencyCompensationSec = typeof val === 'number' ? val : 0.040;
   }
 
   /**
@@ -154,6 +164,87 @@ export class HitDetector {
 
     bestCandidate.played = true;
     const timingDiff = currentTimeSec - bestCandidate.timeSec;
+    const absDiff = Math.abs(timingDiff);
+
+    const isPerfect = absDiff <= this.perfectWindowSec;
+    const judgement = isPerfect ? JUDGEMENTS.PERFECT : JUDGEMENTS.GOOD;
+    const timingScore = isPerfect ? 100 : 70;
+
+    return {
+      judgement,
+      timingScore,
+      timingDiff,
+      timingDiffMs: timingDiff * 1000,
+      note: bestCandidate,
+      lane
+    };
+  }
+
+  /**
+   * Evaluates a screen-space / dynamic hitbox lane press event with latency compensation
+   *
+   * @param {number} lane - Target lane index [0..laneCount-1]
+   * @param {number} currentTimeSec - Current song playback time in seconds
+   * @param {Array<Object>} activeNotes - List of active notes in the song
+   * @param {Object} [options={}] - Optional evaluation options
+   * @param {number} [options.latencyCompensationSec] - Latency compensation override in seconds
+   * @returns {Object|null} Hit evaluation result or null
+   */
+  evaluateLanePress(lane, currentTimeSec, activeNotes, options = {}) {
+    if (lane == null || lane < 0 || !activeNotes || !Array.isArray(activeNotes)) {
+      return null;
+    }
+
+    const latencySec = options.latencyCompensationSec ?? this.inputLatencyCompensationSec ?? 0.040;
+    const evaluatedTime = currentTimeSec + latencySec;
+
+    const candidates = [];
+
+    for (const note of activeNotes) {
+      if (!note || typeof note.timeSec !== 'number') continue;
+
+      const isChord = Array.isArray(note.notes) && note.notes.length > 0;
+      if (note.played && !isChord) {
+        continue;
+      }
+
+      let matchesLane = false;
+      if (isChord) {
+        if (note.notes.some(n => n.lane === lane && !n.played)) {
+          matchesLane = true;
+        } else if (note.lane === lane && !note.played) {
+          matchesLane = true;
+        }
+      } else if (!note.played && note.lane === lane) {
+        matchesLane = true;
+      }
+
+      if (!matchesLane) continue;
+
+      const diffSec = Math.abs(evaluatedTime - note.timeSec);
+      if (diffSec <= this.goodWindowSec) {
+        candidates.push({ note, diffSec });
+      }
+    }
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    candidates.sort((a, b) => a.diffSec - b.diffSec);
+    const bestCandidate = candidates[0].note;
+
+    bestCandidate.played = true;
+
+    if (Array.isArray(bestCandidate.notes)) {
+      for (const subNote of bestCandidate.notes) {
+        if (subNote.lane === lane) {
+          subNote.played = true;
+        }
+      }
+    }
+
+    const timingDiff = evaluatedTime - bestCandidate.timeSec;
     const absDiff = Math.abs(timingDiff);
 
     const isPerfect = absDiff <= this.perfectWindowSec;

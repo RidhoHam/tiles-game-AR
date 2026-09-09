@@ -10,6 +10,7 @@ test('HitDetector initializes with sensible default options', () => {
   assert.equal(detector.perfectWindowSec, 0.050);
   assert.equal(detector.goodWindowSec, 0.120);
   assert.equal(detector.forgiveness, 1.2);
+  assert.equal(detector.inputLatencyCompensationSec, 0.040);
 });
 
 test('HitDetector accepts custom options in constructor', () => {
@@ -19,7 +20,8 @@ test('HitDetector accepts custom options in constructor', () => {
     hitPlaneZ: -0.15,
     perfectWindowSec: 0.040,
     goodWindowSec: 0.100,
-    forgiveness: 1.3
+    forgiveness: 1.3,
+    inputLatencyCompensationSec: 0.035
   });
   assert.equal(custom.laneCount, 8);
   assert.equal(custom.arenaWidth, 1.2);
@@ -27,6 +29,14 @@ test('HitDetector accepts custom options in constructor', () => {
   assert.equal(custom.perfectWindowSec, 0.040);
   assert.equal(custom.goodWindowSec, 0.100);
   assert.equal(custom.forgiveness, 1.3);
+  assert.equal(custom.inputLatencyCompensationSec, 0.035);
+});
+
+test('HitDetector inputLatencyCompensationSec getter and setter update compensation value', () => {
+  const detector = new HitDetector();
+  assert.equal(detector.inputLatencyCompensationSec, 0.040);
+  detector.inputLatencyCompensationSec = 0.055;
+  assert.equal(detector.inputLatencyCompensationSec, 0.055);
 });
 
 test('mapHandToLane maps positions accurately in 4-lane mode', () => {
@@ -306,3 +316,167 @@ test('evaluateChordCompleteness scores based on hit ratios', () => {
   assert.equal(resZero.judgement, 'MISS');
   assert.equal(resZero.completeness, 0.0);
 });
+
+test('evaluateLanePress returns PERFECT when timing diff is within perfectWindowSec (<= 50ms)', () => {
+  const detector = new HitDetector({
+    perfectWindowSec: 0.050,
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  const note = { id: 'note_1', lane: 2, timeSec: 2.0, played: false };
+  // currentTime 1.98s + 0.040s latency = 2.02s evaluatedTime -> diff = +0.020s (20ms <= 50ms)
+  const result = detector.evaluateLanePress(2, 1.98, [note]);
+
+  assert.ok(result);
+  assert.equal(result.judgement, 'PERFECT');
+  assert.equal(result.timingScore, 100);
+  assert.equal(result.lane, 2);
+  assert.equal(result.note.id, 'note_1');
+  assert.equal(note.played, true);
+  assert.ok(Math.abs(result.timingDiff - 0.02) < 1e-6);
+  assert.ok(Math.abs(result.timingDiffMs - 20) < 1e-3);
+});
+
+test('evaluateLanePress returns GOOD when timing diff is between 50ms and 120ms', () => {
+  const detector = new HitDetector({
+    perfectWindowSec: 0.050,
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  // Late hit: press at 2.04s + 0.040s latency = 2.08s evaluatedTime -> diff = +0.080s (80ms -> GOOD)
+  const lateNote = { id: 'note_late', lane: 1, timeSec: 2.0, played: false };
+  const resultLate = detector.evaluateLanePress(1, 2.04, [lateNote]);
+
+  assert.ok(resultLate);
+  assert.equal(resultLate.judgement, 'GOOD');
+  assert.equal(resultLate.timingScore, 70);
+  assert.equal(lateNote.played, true);
+  assert.ok(Math.abs(resultLate.timingDiff - 0.08) < 1e-6);
+
+  // Early hit: press at 1.89s + 0.040s = 1.93s -> diff = -0.070s (-70ms, |diff| = 70ms -> GOOD)
+  const earlyNote = { id: 'note_early', lane: 3, timeSec: 2.0, played: false };
+  const resultEarly = detector.evaluateLanePress(3, 1.89, [earlyNote]);
+
+  assert.ok(resultEarly);
+  assert.equal(resultEarly.judgement, 'GOOD');
+  assert.equal(resultEarly.timingScore, 70);
+  assert.equal(earlyNote.played, true);
+});
+
+test('evaluateLanePress returns null outside goodWindow (> 120ms)', () => {
+  const detector = new HitDetector({
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  const note = { id: 'note_1', lane: 0, timeSec: 2.0, played: false };
+  // Late press at 2.10s + 0.040s = 2.14s -> diff = +0.140s (140ms > 120ms)
+  const resultLate = detector.evaluateLanePress(0, 2.10, [note]);
+  assert.equal(resultLate, null);
+  assert.equal(note.played, false);
+
+  // Early press at 1.80s + 0.040s = 1.84s -> diff = -0.160s (160ms > 120ms)
+  const resultEarly = detector.evaluateLanePress(0, 1.80, [note]);
+  assert.equal(resultEarly, null);
+  assert.equal(note.played, false);
+});
+
+test('evaluateLanePress returns null with wrong lane', () => {
+  const detector = new HitDetector();
+  const note = { id: 'note_1', lane: 1, timeSec: 2.0, played: false };
+
+  // Press lane 3 instead of lane 1
+  const result = detector.evaluateLanePress(3, 1.96, [note]);
+  assert.equal(result, null);
+  assert.equal(note.played, false);
+
+  // Invalid lane indices
+  assert.equal(detector.evaluateLanePress(-1, 1.96, [note]), null);
+  assert.equal(detector.evaluateLanePress(null, 1.96, [note]), null);
+});
+
+test('evaluateLanePress applies default and custom latency compensation offset correctly', () => {
+  const detector = new HitDetector({
+    perfectWindowSec: 0.050,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  const note1 = { id: 'note_lat1', lane: 2, timeSec: 1.0, played: false };
+  // Default compensation: 0.040s, press at 0.96s -> evaluatedTime 1.00s -> diff 0.00s
+  const resDefault = detector.evaluateLanePress(2, 0.96, [note1]);
+  assert.ok(resDefault);
+  assert.equal(resDefault.judgement, 'PERFECT');
+  assert.ok(Math.abs(resDefault.timingDiff) < 1e-6);
+
+  // Custom latency compensation in options: 0.060s
+  const note2 = { id: 'note_lat2', lane: 2, timeSec: 1.0, played: false };
+  // Press at 0.94s + 0.060s custom latency = 1.00s -> diff 0.00s
+  const resCustom = detector.evaluateLanePress(2, 0.94, [note2], { latencyCompensationSec: 0.060 });
+  assert.ok(resCustom);
+  assert.equal(resCustom.judgement, 'PERFECT');
+  assert.ok(Math.abs(resCustom.timingDiff) < 1e-6);
+});
+
+test('evaluateLanePress handles chord sub-notes and marks individual sub-notes played', () => {
+  const detector = new HitDetector({
+    perfectWindowSec: 0.050,
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  const chordNote = {
+    id: 'chord_1',
+    timeSec: 3.0,
+    type: 'chord',
+    played: false,
+    notes: [
+      { lane: 0, note: 'C4', played: false },
+      { lane: 2, note: 'G4', played: false }
+    ]
+  };
+
+  // 1. Hit lane 0 of chord at 2.97s + 0.040s = 3.01s (diff +10ms -> PERFECT)
+  const resultLane0 = detector.evaluateLanePress(0, 2.97, [chordNote]);
+  assert.ok(resultLane0);
+  assert.equal(resultLane0.judgement, 'PERFECT');
+  assert.equal(resultLane0.lane, 0);
+  assert.equal(chordNote.played, true);
+  assert.equal(chordNote.notes[0].played, true);
+  assert.equal(chordNote.notes[1].played, false);
+
+  // 2. Hit lane 2 of chord at 2.98s + 0.040s = 3.02s (diff +20ms -> PERFECT)
+  const resultLane2 = detector.evaluateLanePress(2, 2.98, [chordNote]);
+  assert.ok(resultLane2);
+  assert.equal(resultLane2.judgement, 'PERFECT');
+  assert.equal(resultLane2.lane, 2);
+  assert.equal(chordNote.notes[1].played, true);
+
+  // 3. Repeated hit on already played sub-note lane 0 returns null
+  const resultRepeat = detector.evaluateLanePress(0, 2.97, [chordNote]);
+  assert.equal(resultRepeat, null);
+
+  // 4. Hit on lane 1 which is not part of chord returns null
+  const resultWrongLane = detector.evaluateLanePress(1, 2.97, [chordNote]);
+  assert.equal(resultWrongLane, null);
+});
+
+test('evaluateLanePress selects closest candidate note when multiple match lane and window', () => {
+  const detector = new HitDetector({
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  const note1 = { id: 'n1', lane: 1, timeSec: 2.0, played: false };
+  const note2 = { id: 'n2', lane: 1, timeSec: 2.1, played: false };
+
+  // evaluatedTime = 2.01s (currentTime 1.97s + 0.040s)
+  // diff for n1 is 0.01s, diff for n2 is 0.09s -> selects n1
+  const result = detector.evaluateLanePress(1, 1.97, [note1, note2]);
+  assert.ok(result);
+  assert.equal(result.note.id, 'n1');
+  assert.equal(note1.played, true);
+  assert.equal(note2.played, false);
+});
+
