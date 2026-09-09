@@ -969,6 +969,180 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     }
 
     /**
+     * Natural Real-Hand Depth Occlusion:
+     * Punches through the 2D canvas at the exact coordinates of the player's physical hands
+     * using destination-out composite mode.
+     *
+     * This reveals the live 60 FPS camera feed directly underneath the canvas without any
+     * heavy offscreen canvas copies, so the player's real hands appear naturally on top of
+     * the virtual keyboard and falling tiles!
+     */
+    function renderNaturalHandOcclusion(ctx, hands, width, height) {
+      if (!hands || hands.length === 0) return;
+
+      for (const hand of hands) {
+        if (!hand) continue;
+
+        let pts = null;
+        if (Array.isArray(hand.cameraLandmarks) && hand.cameraLandmarks.length >= 21) {
+          pts = hand.cameraLandmarks.map(p => getScreenPoint(p, null, width, height));
+        }
+
+        if (!pts || pts.length < 21 || pts.some(p => !p)) {
+          const tips = [
+            getScreenPoint(hand.cameraThumbTip, hand.thumbTip, width, height),
+            getScreenPoint(hand.cameraIndexTip, hand.indexTip, width, height),
+            getScreenPoint(hand.cameraMiddleTip, hand.middleTip, width, height),
+            getScreenPoint(hand.cameraRingTip, hand.ringTip, width, height),
+            getScreenPoint(hand.cameraPinkyTip, hand.pinkyTip, width, height)
+          ].filter(Boolean);
+
+          if (tips.length > 0) {
+            ctx.save();
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.fillStyle = '#000000';
+            for (const tip of tips) {
+              ctx.beginPath();
+              ctx.arc(tip.x, tip.y, 24, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
+          }
+          continue;
+        }
+
+        // Scale based on palm distance between wrist (0) and middle knuckle (9)
+        const palmDist = Math.hypot(pts[9].x - pts[0].x, pts[9].y - pts[0].y);
+        const handScale = Math.max(0.65, Math.min(1.6, palmDist / 110));
+
+        const thumbW = 34 * handScale;
+        const indexW = 28 * handScale;
+        const midW = 28 * handScale;
+        const ringW = 26 * handScale;
+        const pinkyW = 24 * handScale;
+
+        // 1. Natural Forearm Extension: connects smoothly towards the bottom of the camera frame
+        const armDirX = pts[0].x - pts[9].x;
+        const armDirY = pts[0].y - pts[9].y;
+        const armDirLen = Math.hypot(armDirX, armDirY) || 1;
+        const uDirX = armDirX / armDirLen;
+        const uDirY = armDirY / armDirLen;
+        const perpX = -uDirY;
+        const perpY = uDirX;
+        const halfArmW = Math.max(32, Math.hypot(pts[17].x - pts[1].x, pts[17].y - pts[1].y) * 0.48);
+        const armExtLen = 240; // Extends past the bottom edge of keyboard
+
+        const armExtL = { x: pts[0].x + uDirX * armExtLen - perpX * halfArmW, y: pts[0].y + uDirY * armExtLen - perpY * halfArmW };
+        const armExtR = { x: pts[0].x + uDirX * armExtLen + perpX * halfArmW, y: pts[0].y + uDirY * armExtLen + perpY * halfArmW };
+        const wristL = { x: pts[0].x - perpX * halfArmW, y: pts[0].y - perpY * halfArmW };
+        const wristR = { x: pts[0].x + perpX * halfArmW, y: pts[0].y + perpY * halfArmW };
+
+        // 2. Ambient Contact Shadow onto the keys under the hand
+        ctx.save();
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.22)';
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetY = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Shadow palm
+        ctx.beginPath();
+        ctx.moveTo(armExtL.x, armExtL.y);
+        ctx.lineTo(wristL.x, wristL.y);
+        ctx.lineTo(pts[1].x, pts[1].y);
+        ctx.lineTo(pts[2].x, pts[2].y);
+        ctx.lineTo(pts[5].x, pts[5].y);
+        ctx.lineTo(pts[9].x, pts[9].y);
+        ctx.lineTo(pts[13].x, pts[13].y);
+        ctx.lineTo(pts[17].x, pts[17].y);
+        ctx.lineTo(wristR.x, wristR.y);
+        ctx.lineTo(armExtR.x, armExtR.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Shadow fingers
+        const shadowFingers = [
+          { chain: [1, 2, 3, 4], width: thumbW + 6 },
+          { chain: [5, 6, 7, 8], width: indexW + 6 },
+          { chain: [9, 10, 11, 12], width: midW + 6 },
+          { chain: [13, 14, 15, 16], width: ringW + 6 },
+          { chain: [17, 18, 19, 20], width: pinkyW + 6 }
+        ];
+        for (const f of shadowFingers) {
+          ctx.lineWidth = f.width;
+          ctx.beginPath();
+          ctx.moveTo(pts[f.chain[0]].x, pts[f.chain[0]].y);
+          for (let k = 1; k < f.chain.length; k++) {
+            ctx.lineTo(pts[f.chain[k]].x, pts[f.chain[k]].y);
+          }
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 3. Punch through using destination-out to reveal the real camera feed!
+        ctx.save();
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = '#000000';
+        ctx.strokeStyle = '#000000';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Draw Palm and Forearm base
+        ctx.beginPath();
+        ctx.moveTo(armExtL.x, armExtL.y);
+        ctx.lineTo(wristL.x, wristL.y);
+        ctx.lineTo(pts[1].x, pts[1].y);   // Thumb CMC
+        ctx.lineTo(pts[2].x, pts[2].y);   // Thumb MCP
+        ctx.lineTo(pts[5].x, pts[5].y);   // Index MCP
+        ctx.lineTo(pts[9].x, pts[9].y);   // Middle MCP
+        ctx.lineTo(pts[13].x, pts[13].y); // Ring MCP
+        ctx.lineTo(pts[17].x, pts[17].y); // Pinky MCP
+        ctx.lineTo(wristR.x, wristR.y);
+        ctx.lineTo(armExtR.x, armExtR.y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Fill Webbing between knuckles
+        const addWeb = (a, b) => {
+          ctx.beginPath();
+          ctx.moveTo(pts[a].x, pts[a].y);
+          ctx.lineTo(pts[b].x, pts[b].y);
+          ctx.lineTo(pts[b + 1].x, pts[b + 1].y);
+          ctx.lineTo(pts[a + 1].x, pts[a + 1].y);
+          ctx.closePath();
+          ctx.fill();
+        };
+        addWeb(5, 9);   // Index - Mid
+        addWeb(9, 13);  // Mid - Ring
+        addWeb(13, 17); // Ring - Pinky
+        addWeb(1, 5);   // Thumb - Index
+
+        // Draw 5 continuous anatomical fingers
+        const fingers = [
+          { chain: [1, 2, 3, 4], width: thumbW },
+          { chain: [5, 6, 7, 8], width: indexW },
+          { chain: [9, 10, 11, 12], width: midW },
+          { chain: [13, 14, 15, 16], width: ringW },
+          { chain: [17, 18, 19, 20], width: pinkyW }
+        ];
+
+        for (const f of fingers) {
+          ctx.lineWidth = f.width;
+          ctx.beginPath();
+          ctx.moveTo(pts[f.chain[0]].x, pts[f.chain[0]].y);
+          for (let k = 1; k < f.chain.length; k++) {
+            ctx.lineTo(pts[f.chain[k]].x, pts[f.chain[k]].y);
+          }
+          ctx.stroke();
+        }
+
+        ctx.restore();
+      }
+    }
+
+    /**
      * Draws the 2D Spatial Gesture Overlay:
      * - Animated holographic table rectangle spanning between user hands
      * - Dynamic corner brackets [ ] and neon dashed borders
@@ -1282,6 +1456,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.fillText(badgeText, badgeCenterX, badgeY);
         ctx.restore();
 
+        // Natural Hand Occlusion in Scan Mode: Real hands naturally appear over the canvas quad
+        renderNaturalHandOcclusion(ctx, hands, width, height);
+
         // 1h. Render the 4 Draggable Corner Handles (TL, TR, BR, BL)
         const cornerHandles = [
           { key: 'p1', pt: p1, name: 'TL', label: 'Kiri Atas', defaultColor: '#38bdf8' },
@@ -1528,16 +1705,18 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         };
 
         const isUp = flowDirection === 'up';
-        const travelDuration = arScene?.travelDurationSec || 2.0;
+        const travelDuration = arScene?.travelDurationSec || 2.2;
 
-        // 2a. Perspective Runway OUTSIDE the Canvas (where notes stream down from background)
-        // Notes come from outside (t = -2.0 down to t = 0.0)
+        // 2a. Perspective Runway OUTSIDE the Canvas (where notes stream into the keys)
+        // In 'up' mode: runway extends towards the player up to t = 3.2
+        // In 'down' mode: runway extends into distance up to t = -3.0
         ctx.save();
-        const spawnL = getPerspectivePoint(0, isUp ? 2.2 : -2.0);
-        const spawnR = getPerspectivePoint(1.0, isUp ? 2.2 : -2.0);
+        const runwayT = isUp ? 3.2 : -3.0;
+        const spawnL = getPerspectivePoint(0, runwayT);
+        const spawnR = getPerspectivePoint(1.0, runwayT);
 
         // Faint outer runway guide rails
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
         ctx.lineWidth = 1.8;
         ctx.setLineDash([8, 6]);
         ctx.beginPath();
@@ -1547,13 +1726,13 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.lineTo(isUp ? p3.x : p2.x, isUp ? p3.y : p2.y);
         ctx.stroke();
 
-        // Faint perspective lane divider tracks streaming down to the keys
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+        // Faint perspective lane divider tracks streaming to the keys
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
         ctx.lineWidth = 1.2;
         ctx.setLineDash([4, 6]);
         for (let i = 1; i < numLanes; i++) {
           const u = i / numLanes;
-          const sPt = getPerspectivePoint(u, isUp ? 2.2 : -2.0);
+          const sPt = getPerspectivePoint(u, runwayT);
           const ePt = getPerspectivePoint(u, isUp ? 1.0 : 0.0);
           ctx.beginPath();
           ctx.moveTo(sPt.x, sPt.y);
@@ -1562,7 +1741,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         }
 
         // Spawn portal line in the distance
-        ctx.strokeStyle = 'rgba(129, 140, 248, 0.7)';
+        ctx.strokeStyle = 'rgba(129, 140, 248, 0.75)';
         ctx.lineWidth = 2.5;
         ctx.setLineDash([]);
         ctx.shadowColor = '#818cf8';
@@ -1577,17 +1756,19 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         if (chart && Array.isArray(chart.notes)) {
           for (const note of chart.notes) {
             const timeUntilHit = note.timeSec - currentTimeSec;
-            const progress = 1.0 - (timeUntilHit / travelDuration); // 0 at spawn outside, 1 at Hit Line (t = 0.0)
+            const progress = 1.0 - (timeUntilHit / travelDuration); // 0 at spawn outside, 1 at Hit Line
 
-            const noteT = isUp ? (1.0 + 2.0 * (1.0 - progress)) : (-2.0 * (1.0 - progress));
+            const noteT = isUp ? (1.0 + 2.2 * (1.0 - progress)) : (-3.0 * (1.0 - progress));
             const isChord = note.type === 'chord' || Boolean(note.isChord) || Boolean(note.notes);
-            const durSec = Math.max(0.12, note.durationSec || 0.25);
-            const heightT = Math.max(0.08, Math.min(0.38, (durSec / travelDuration) * 2.0));
+            const durSec = Math.max(0.14, note.durationSec || 0.28);
+            const heightT = Math.max(0.10, Math.min(0.45, (durSec / travelDuration) * 2.2));
 
             const tFront = noteT;
             const tBack = isUp ? (noteT + heightT) : (noteT - heightT);
 
-            const isVisible = isUp ? (tFront <= 1.25 && tBack >= -0.1) : (tFront >= -2.2 && tBack <= 0.25);
+            const isVisible = isUp
+              ? (tFront <= 3.35 && tBack >= 0.7)
+              : (tFront >= -3.35 && tBack <= 0.3);
 
             if (isVisible && !note.missed) {
               let u0, u1;
@@ -1981,65 +2162,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.fillText('PERFECT ⚡', hitR.x + 10, hitR.y);
         ctx.restore();
 
-        // 2g. Holographic Energy Rings on ALL 10 Fingers (5 Left + 5 Right)
-        if (hands && hands.length > 0) {
-          for (const hand of hands) {
-            const isLeft = hand.handedness === 'Left';
-            const handColor = isLeft ? '#ec4899' : '#06b6d4';
-            const handPrefix = isLeft ? 'L' : 'R';
-
-            const fingers = [
-              { name: 'Thumb', pt: getScreenPoint(hand.cameraThumbTip, hand.thumbTip), isThumb: true, label: `${handPrefix}-Thumb (Slam)` },
-              { name: 'Index', pt: getScreenPoint(hand.cameraIndexTip, hand.indexTip), label: `${handPrefix}-Index` },
-              { name: 'Mid', pt: getScreenPoint(hand.cameraMiddleTip, hand.middleTip), label: `${handPrefix}-Mid` },
-              { name: 'Ring', pt: getScreenPoint(hand.cameraRingTip, hand.ringTip), label: `${handPrefix}-Ring` },
-              { name: 'Pinky', pt: getScreenPoint(hand.cameraPinkyTip, hand.pinkyTip), label: `${handPrefix}-Pinky` }
-            ];
-
-            for (const f of fingers) {
-              if (!f.pt) continue;
-              const pt = f.pt;
-              ctx.save();
-
-              const ringColor = f.isThumb ? '#f59e0b' : handColor;
-              const ringRadius = f.isThumb ? 20 : 15;
-
-              // Outer Energy Ring
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, ringRadius, 0, Math.PI * 2);
-              ctx.strokeStyle = ringColor;
-              ctx.lineWidth = f.isThumb ? 3.0 : 2.2;
-              ctx.shadowColor = ringColor;
-              ctx.shadowBlur = 14;
-              ctx.stroke();
-
-              // Dynamic Expanding Ripple
-              const rippleR = ringRadius + (time % 750) / 60;
-              const rippleAlpha = Math.max(0, 1 - (time % 750) / 750);
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, rippleR, 0, Math.PI * 2);
-              ctx.strokeStyle = f.isThumb ? `rgba(245, 158, 11, ${rippleAlpha})` : (isLeft ? `rgba(236, 72, 153, ${rippleAlpha})` : `rgba(6, 182, 212, ${rippleAlpha})`);
-              ctx.lineWidth = 1.5;
-              ctx.stroke();
-
-              // Solid Center Jewel Dot
-              ctx.beginPath();
-              ctx.arc(pt.x, pt.y, 4.5, 0, Math.PI * 2);
-              ctx.fillStyle = '#ffffff';
-              ctx.shadowBlur = 8;
-              ctx.fill();
-
-              // Finger Label
-              ctx.shadowBlur = 0;
-              ctx.font = f.isThumb ? 'bold 10px "Outfit", sans-serif' : '600 9px "Inter", sans-serif';
-              ctx.fillStyle = ringColor;
-              ctx.textAlign = 'center';
-              ctx.fillText(f.label, pt.x, pt.y - ringRadius - 6);
-
-              ctx.restore();
-            }
-          }
-        }
+        // 2g. Natural Real-Hand Depth Occlusion Pass:
+        // Punches through the 2D canvas at the player's real hand positions so the live
+        // camera video feed reveals their real physical hands playing ON TOP of the virtual piano!
+        // No artificial rings, labels, or spider limbs — pure, natural hands of the player.
+        renderNaturalHandOcclusion(ctx, hands, width, height);
       }
     }
 
