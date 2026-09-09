@@ -602,11 +602,24 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       arUI.scoreManager.reset();
       arUI.updateScore(0, 0, 100);
 
+      // Ensure AudioContext is initialized and resumed
+      try {
+        if (soundEngine) {
+          if (!soundEngine.ctx) soundEngine.initAudio();
+          else if (soundEngine.ctx.state === 'suspended' && typeof soundEngine.ctx.resume === 'function') {
+            soundEngine.ctx.resume().catch(() => {});
+          }
+        }
+      } catch (e) {}
+
       // Reset notes state
-      for (const note of currentChart.notes) {
-        note.spawned = false;
-        note.played = false;
-        note.missed = false;
+      if (currentChart && Array.isArray(currentChart.notes)) {
+        for (const note of currentChart.notes) {
+          note.spawned = false;
+          note.played = false;
+          note.missed = false;
+          note.playedSound = false;
+        }
       }
 
       songStartTimeSec = performance.now() / 1000;
@@ -701,6 +714,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     function handleHitEvaluation(prevPos, currPos, currentTimeSec) {
       const hit = hitDetector.evaluateCrossingHit(prevPos, currPos, currentTimeSec, currentChart.notes);
       if (hit) {
+        hit.note.playedSound = true;
         soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec);
         soundEngine.playFeedback(hit.judgement);
 
@@ -709,6 +723,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
 
         const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
+        triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
         arScene.triggerHitVFX(laneOrMidi, hit.judgement);
         arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
         arScene.worldReaction.setCombo(arUI.scoreManager.combo);
@@ -729,8 +744,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       if (hitCandidates.length > 0) {
         for (const note of hitCandidates) {
           note.played = true;
+          note.playedSound = true;
           soundEngine.playNote(note.note || note.midi, note.durationSec || 0.4);
           const laneOrMidi = (arScene.viewMode === 'roll' && note.midi) ? note.midi : note.lane;
+          triggerKeyHitAnimation(laneOrMidi, 'PERFECT', true);
           arScene.triggerHitVFX(laneOrMidi, 'PERFECT');
         }
 
@@ -869,6 +886,245 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         p3: { x: midX + deskW / 2, y: botY },
         p4: { x: midX - deskW / 2, y: botY }
       };
+    }
+
+    // Global user interaction listeners to unlock Web Audio on first gesture
+    ['pointerdown', 'touchstart', 'click', 'keydown'].forEach(evt => {
+      window.addEventListener(evt, () => {
+        if (soundEngine) {
+          if (!soundEngine.ctx) soundEngine.initAudio();
+          else if (soundEngine.ctx.state === 'suspended' && typeof soundEngine.ctx.resume === 'function') {
+            soundEngine.ctx.resume().catch(() => {});
+          }
+        }
+      }, { passive: true });
+    });
+
+    // 2-Octave Piano MIDI definitions (C3 = 48 to B4 = 71)
+    const WHITE_KEY_MIDIS = [48, 50, 52, 53, 55, 57, 59, 60, 62, 64, 65, 67, 69, 71];
+    const BLACK_KEY_MIDIS = {
+      0: 49,
+      1: 51,
+      3: 54,
+      4: 56,
+      5: 58,
+      7: 61,
+      8: 63,
+      10: 66,
+      11: 68,
+      12: 70
+    };
+
+    // Active key hit animation system (depression sink, radiant glow, laser pillar, shockwave ring)
+    const activeKeyAnimations = new Map();
+
+    function triggerKeyHitAnimation(keyId, judgement = 'PERFECT', isChord = false) {
+      if (keyId === undefined || keyId === null) return;
+      const now = performance.now();
+      activeKeyAnimations.set(String(keyId), {
+        startTime: now,
+        judgement,
+        isChord,
+        durationMs: 360
+      });
+    }
+
+    function getActiveKeyHit(keyId) {
+      if (keyId === undefined || keyId === null) return null;
+      const anim = activeKeyAnimations.get(String(keyId));
+      if (!anim) return null;
+      const elapsed = performance.now() - anim.startTime;
+      if (elapsed >= anim.durationMs) {
+        activeKeyAnimations.delete(String(keyId));
+        return null;
+      }
+      return {
+        progress: elapsed / anim.durationMs,
+        judgement: anim.judgement,
+        isChord: anim.isChord
+      };
+    }
+
+    // Offscreen canvas for compositing the player's physical hands on top of the virtual piano keys
+    let offscreenHandCanvas = null;
+    let offscreenHandCtx = null;
+
+    function renderRealHandForeground(ctx, hands, videoEl, width, height) {
+      if (!hands || hands.length === 0) return;
+
+      if (!offscreenHandCanvas) {
+        offscreenHandCanvas = document.createElement('canvas');
+        offscreenHandCtx = offscreenHandCanvas.getContext('2d');
+      }
+      if (offscreenHandCanvas.width !== width || offscreenHandCanvas.height !== height) {
+        offscreenHandCanvas.width = width;
+        offscreenHandCanvas.height = height;
+      }
+
+      const mCtx = offscreenHandCtx;
+      mCtx.clearRect(0, 0, width, height);
+
+      let hasDrawnSilhouette = false;
+
+      for (const hand of hands) {
+        const rawCam = hand.cameraLandmarks || (hand.rawLandmarks ? hand.rawLandmarks.map(p => ({
+          x: isCameraMirrored ? (1 - p.x) : p.x,
+          y: p.y
+        })) : null);
+
+        let pts = null;
+        if (rawCam && rawCam.length >= 21) {
+          pts = rawCam.map(p => getScreenPoint(p, null, width, height)).filter(Boolean);
+        }
+
+        if (!pts || pts.length < 21) {
+          const wristPt = getScreenPoint(hand.cameraWrist, hand.wrist, width, height);
+          const thumbPt = getScreenPoint(hand.cameraThumbTip, hand.thumbTip, width, height);
+          const indexPt = getScreenPoint(hand.cameraIndexTip, hand.indexTip, width, height);
+          const midPt = getScreenPoint(hand.cameraMiddleTip, hand.middleTip, width, height);
+          const ringPt = getScreenPoint(hand.cameraRingTip, hand.ringTip, width, height);
+          const pinkyPt = getScreenPoint(hand.cameraPinkyTip, hand.pinkyTip, width, height);
+          if (!wristPt) continue;
+
+          mCtx.save();
+          mCtx.fillStyle = '#ffffff';
+          mCtx.strokeStyle = '#ffffff';
+          mCtx.lineCap = 'round';
+          mCtx.lineJoin = 'round';
+
+          mCtx.beginPath();
+          mCtx.moveTo(wristPt.x, wristPt.y);
+          if (thumbPt) mCtx.lineTo(thumbPt.x, thumbPt.y);
+          if (indexPt) mCtx.lineTo(indexPt.x, indexPt.y);
+          if (midPt) mCtx.lineTo(midPt.x, midPt.y);
+          if (ringPt) mCtx.lineTo(ringPt.x, ringPt.y);
+          if (pinkyPt) mCtx.lineTo(pinkyPt.x, pinkyPt.y);
+          mCtx.closePath();
+          mCtx.fill();
+
+          const tips = [thumbPt, indexPt, midPt, ringPt, pinkyPt].filter(Boolean);
+          for (const tip of tips) {
+            mCtx.lineWidth = 26;
+            mCtx.beginPath();
+            mCtx.moveTo(wristPt.x, wristPt.y);
+            mCtx.lineTo(tip.x, tip.y);
+            mCtx.stroke();
+          }
+          mCtx.restore();
+          hasDrawnSilhouette = true;
+          continue;
+        }
+
+        // Full 21 Landmark Hand Mesh
+        mCtx.save();
+        mCtx.fillStyle = '#ffffff';
+        mCtx.strokeStyle = '#ffffff';
+        mCtx.lineCap = 'round';
+        mCtx.lineJoin = 'round';
+
+        // 1. Solid Palm Polygon
+        mCtx.beginPath();
+        mCtx.moveTo(pts[0].x, pts[0].y);   // Wrist
+        mCtx.lineTo(pts[1].x, pts[1].y);   // Thumb CMC
+        mCtx.lineTo(pts[2].x, pts[2].y);   // Thumb MCP
+        mCtx.lineTo(pts[5].x, pts[5].y);   // Index MCP
+        mCtx.lineTo(pts[9].x, pts[9].y);   // Middle MCP
+        mCtx.lineTo(pts[13].x, pts[13].y); // Ring MCP
+        mCtx.lineTo(pts[17].x, pts[17].y); // Pinky MCP
+        mCtx.closePath();
+        mCtx.fill();
+
+        // 2. Five Fingers with anatomically tapered capsules
+        const fingerChains = [
+          [1, 2, 3, 4],     // Thumb
+          [5, 6, 7, 8],     // Index
+          [9, 10, 11, 12],  // Middle
+          [13, 14, 15, 16], // Ring
+          [17, 18, 19, 20]  // Pinky
+        ];
+
+        const palmDist = Math.hypot(pts[9].x - pts[0].x, pts[9].y - pts[0].y);
+        const handScale = Math.max(0.65, Math.min(1.75, palmDist / 120));
+
+        for (let f = 0; f < fingerChains.length; f++) {
+          const chain = fingerChains[f];
+          const baseWidth = (f === 0 ? 36 : (f === 4 ? 24 : 28)) * handScale;
+          for (let s = 0; s < chain.length - 1; s++) {
+            const p1 = pts[chain[s]];
+            const p2 = pts[chain[s + 1]];
+            const segWidth = baseWidth * (1.0 - s * 0.14);
+            mCtx.lineWidth = segWidth;
+            mCtx.beginPath();
+            mCtx.moveTo(p1.x, p1.y);
+            mCtx.lineTo(p2.x, p2.y);
+            mCtx.stroke();
+          }
+        }
+
+        // Circular Joint and Tip Caps
+        for (let i = 0; i < 21; i++) {
+          const rad = (i === 4 || i === 8 || i === 12 || i === 16 || i === 20 ? 13 : 15) * handScale;
+          mCtx.beginPath();
+          mCtx.arc(pts[i].x, pts[i].y, rad, 0, Math.PI * 2);
+          mCtx.fill();
+        }
+
+        mCtx.restore();
+        hasDrawnSilhouette = true;
+      }
+
+      if (!hasDrawnSilhouette) return;
+
+      const hasLiveVideo = Boolean(videoEl && videoEl.readyState >= 2 && (videoEl.videoWidth || 0) > 0);
+
+      if (hasLiveVideo) {
+        const vw = videoEl.videoWidth || 640;
+        const vh = videoEl.videoHeight || 480;
+        const videoAspect = vw / vh;
+        const screenAspect = width / height;
+        let renderW, renderH, offsetX, offsetY;
+        if (screenAspect > videoAspect) {
+          renderW = width;
+          renderH = width / videoAspect;
+          offsetX = 0;
+          offsetY = (height - renderH) / 2;
+        } else {
+          renderH = height;
+          renderW = height * videoAspect;
+          offsetX = (width - renderW) / 2;
+          offsetY = 0;
+        }
+
+        mCtx.save();
+        mCtx.globalCompositeOperation = 'source-in';
+        if (isCameraMirrored) {
+          mCtx.translate(width, 0);
+          mCtx.scale(-1, 1);
+        }
+        mCtx.drawImage(videoEl, offsetX, offsetY, renderW, renderH);
+        mCtx.restore();
+
+        // Draw the real masked hand onto main canvas with soft natural contact shadow
+        ctx.save();
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+        ctx.shadowBlur = 12;
+        ctx.shadowOffsetY = 4;
+        ctx.drawImage(offscreenHandCanvas, 0, 0);
+        ctx.restore();
+      } else {
+        // Holographic Cyber Hand fallback if video isn't ready
+        mCtx.save();
+        mCtx.globalCompositeOperation = 'source-in';
+        mCtx.fillStyle = 'rgba(56, 189, 248, 0.38)';
+        mCtx.fillRect(0, 0, width, height);
+        mCtx.restore();
+
+        ctx.save();
+        ctx.shadowColor = '#38bdf8';
+        ctx.shadowBlur = 14;
+        ctx.drawImage(offscreenHandCanvas, 0, 0);
+        ctx.restore();
+      }
     }
 
     /**
@@ -1605,19 +1861,65 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           for (let k = 0; k < numWhite; k++) {
             const u0 = (k / numWhite) + 0.005;
             const u1 = ((k + 1) / numWhite) - 0.005;
+            const kMidi = WHITE_KEY_MIDIS[k];
+            const hitAnim = getActiveKeyHit(k) || getActiveKeyHit(kMidi);
+
+            const sink = hitAnim ? Math.sin(hitAnim.progress * Math.PI) * 7.0 : 0;
             const kwTL = getPerspectivePoint(u0, 0.0);
             const kwTR = getPerspectivePoint(u1, 0.0);
             const kwBR = getPerspectivePoint(u1, 1.0);
             const kwBL = getPerspectivePoint(u0, 1.0);
+            kwBL.y += sink;
+            kwBR.y += sink;
+
+            // Rising Laser Light Pillar shooting up the runway
+            if (hitAnim) {
+              const beamTop = isUp ? (1.0 + 1.1 * (1 - hitAnim.progress)) : (-1.1 * (1 - hitAnim.progress));
+              const bTL = getPerspectivePoint(u0, beamTop);
+              const bTR = getPerspectivePoint(u1, beamTop);
+              const bBR = getPerspectivePoint(u1, isUp ? 1.0 : 0.0);
+              const bBL = getPerspectivePoint(u0, isUp ? 1.0 : 0.0);
+
+              ctx.save();
+              const beamGrad = ctx.createLinearGradient((bBL.x + bBR.x) / 2, (bBL.y + bBR.y) / 2, (bTL.x + bTR.x) / 2, (bTL.y + bTR.y) / 2);
+              const bAlpha = (1 - hitAnim.progress) * 0.72;
+              const bCol = hitAnim.isChord ? '250, 204, 21' : '56, 189, 248';
+              beamGrad.addColorStop(0, `rgba(${bCol}, ${bAlpha})`);
+              beamGrad.addColorStop(1, `rgba(${bCol}, 0)`);
+              ctx.fillStyle = beamGrad;
+              ctx.beginPath();
+              ctx.moveTo(bBL.x, bBL.y);
+              ctx.lineTo(bBR.x, bBR.y);
+              ctx.lineTo(bTR.x, bTR.y);
+              ctx.lineTo(bTL.x, bTL.y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            }
 
             ctx.save();
             const keyGrad = ctx.createLinearGradient((kwTL.x + kwTR.x) / 2, (kwTL.y + kwTR.y) / 2, (kwBL.x + kwBR.x) / 2, (kwBL.y + kwBR.y) / 2);
-            keyGrad.addColorStop(0, '#ffffff');
-            keyGrad.addColorStop(0.8, '#f1f5f9');
-            keyGrad.addColorStop(1, '#cbd5e1');
+            if (hitAnim) {
+              const hp = 1 - hitAnim.progress;
+              if (hitAnim.isChord) {
+                keyGrad.addColorStop(0, `rgba(254, 240, 138, ${0.95 * hp + 0.05})`);
+                keyGrad.addColorStop(0.5, `rgba(250, 204, 21, ${0.85 * hp + 0.15})`);
+                keyGrad.addColorStop(1, `rgba(217, 119, 6, ${0.75 * hp + 0.25})`);
+              } else {
+                keyGrad.addColorStop(0, `rgba(224, 242, 254, ${0.95 * hp + 0.05})`);
+                keyGrad.addColorStop(0.5, `rgba(56, 189, 248, ${0.85 * hp + 0.15})`);
+                keyGrad.addColorStop(1, `rgba(14, 165, 233, ${0.75 * hp + 0.25})`);
+              }
+              ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
+              ctx.shadowBlur = 18 * hp;
+            } else {
+              keyGrad.addColorStop(0, '#ffffff');
+              keyGrad.addColorStop(0.8, '#f1f5f9');
+              keyGrad.addColorStop(1, '#cbd5e1');
+            }
             ctx.fillStyle = keyGrad;
-            ctx.strokeStyle = '#475569';
-            ctx.lineWidth = 1.2;
+            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#facc15' : '#38bdf8') : '#475569';
+            ctx.lineWidth = hitAnim ? 2.2 : 1.2;
             ctx.beginPath();
             ctx.moveTo(kwTL.x, kwTL.y);
             ctx.lineTo(kwTR.x, kwTR.y);
@@ -1627,6 +1929,19 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             ctx.fill();
             ctx.stroke();
             ctx.restore();
+
+            // Expanding Shockwave ring at Hit Line
+            if (hitAnim) {
+              const shockR = 8 + hitAnim.progress * 32;
+              const hitCenter = getPerspectivePoint((u0 + u1) / 2, isUp ? 1.0 : 0.0);
+              ctx.save();
+              ctx.beginPath();
+              ctx.ellipse(hitCenter.x, hitCenter.y, shockR, shockR * 0.45, 0, 0, Math.PI * 2);
+              ctx.strokeStyle = hitAnim.isChord ? `rgba(250, 204, 21, ${1 - hitAnim.progress})` : `rgba(56, 189, 248, ${1 - hitAnim.progress})`;
+              ctx.lineWidth = 2.4 * (1 - hitAnim.progress);
+              ctx.stroke();
+              ctx.restore();
+            }
           }
 
           // 2. Black keys (Ebony, t = [0.0, 0.62])
@@ -1636,17 +1951,56 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               const midU = (bIdx + 1) / numWhite;
               const u0 = midU - 0.022;
               const u1 = midU + 0.022;
+              const bMidi = BLACK_KEY_MIDIS[bIdx];
+              const hitAnim = getActiveKeyHit(bMidi);
+              const sink = hitAnim ? Math.sin(hitAnim.progress * Math.PI) * 6.0 : 0;
+
               const kbTL = getPerspectivePoint(u0, 0.0);
               const kbTR = getPerspectivePoint(u1, 0.0);
               const kbBR = getPerspectivePoint(u1, 0.62);
               const kbBL = getPerspectivePoint(u0, 0.62);
+              kbBL.y += sink;
+              kbBR.y += sink;
+
+              // Rising Laser Light Pillar
+              if (hitAnim) {
+                const beamTop = isUp ? (1.0 + 1.1 * (1 - hitAnim.progress)) : (-1.1 * (1 - hitAnim.progress));
+                const bTL = getPerspectivePoint(u0, beamTop);
+                const bTR = getPerspectivePoint(u1, beamTop);
+                const bBR = getPerspectivePoint(u1, isUp ? 1.0 : 0.0);
+                const bBL = getPerspectivePoint(u0, isUp ? 1.0 : 0.0);
+
+                ctx.save();
+                const beamGrad = ctx.createLinearGradient((bBL.x + bBR.x) / 2, (bBL.y + bBR.y) / 2, (bTL.x + bTR.x) / 2, (bTL.y + bTR.y) / 2);
+                const bAlpha = (1 - hitAnim.progress) * 0.75;
+                const bCol = hitAnim.isChord ? '250, 204, 21' : '56, 189, 248';
+                beamGrad.addColorStop(0, `rgba(${bCol}, ${bAlpha})`);
+                beamGrad.addColorStop(1, `rgba(${bCol}, 0)`);
+                ctx.fillStyle = beamGrad;
+                ctx.beginPath();
+                ctx.moveTo(bBL.x, bBL.y);
+                ctx.lineTo(bBR.x, bBR.y);
+                ctx.lineTo(bTR.x, bTR.y);
+                ctx.lineTo(bTL.x, bTL.y);
+                ctx.closePath();
+                ctx.fill();
+                ctx.restore();
+              }
 
               ctx.save();
-              ctx.fillStyle = '#090d16';
-              ctx.strokeStyle = '#64748b';
-              ctx.lineWidth = 1.2;
-              ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
-              ctx.shadowBlur = 8;
+              if (hitAnim) {
+                ctx.fillStyle = hitAnim.isChord ? '#78350f' : '#0369a1';
+                ctx.strokeStyle = hitAnim.isChord ? '#facc15' : '#38bdf8';
+                ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
+                ctx.shadowBlur = 16 * (1 - hitAnim.progress);
+                ctx.lineWidth = 2.0;
+              } else {
+                ctx.fillStyle = '#090d16';
+                ctx.strokeStyle = '#64748b';
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.65)';
+                ctx.shadowBlur = 8;
+                ctx.lineWidth = 1.2;
+              }
               ctx.beginPath();
               ctx.moveTo(kbTL.x, kbTL.y);
               ctx.lineTo(kbTR.x, kbTR.y);
@@ -1656,6 +2010,19 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               ctx.fill();
               ctx.stroke();
               ctx.restore();
+
+              // Expanding Shockwave ring
+              if (hitAnim) {
+                const shockR = 6 + hitAnim.progress * 26;
+                const hitCenter = getPerspectivePoint(midU, isUp ? 1.0 : 0.0);
+                ctx.save();
+                ctx.beginPath();
+                ctx.ellipse(hitCenter.x, hitCenter.y, shockR, shockR * 0.45, 0, 0, Math.PI * 2);
+                ctx.strokeStyle = hitAnim.isChord ? `rgba(250, 204, 21, ${1 - hitAnim.progress})` : `rgba(56, 189, 248, ${1 - hitAnim.progress})`;
+                ctx.lineWidth = 2.2 * (1 - hitAnim.progress);
+                ctx.stroke();
+                ctx.restore();
+              }
             }
           }
         } else {
@@ -1664,22 +2031,67 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             const isLeft = l < (numLanes / 2);
             const u0 = (l / numLanes) + 0.015;
             const u1 = ((l + 1) / numLanes) - 0.015;
+            const hitAnim = getActiveKeyHit(l);
+            const sink = hitAnim ? Math.sin(hitAnim.progress * Math.PI) * 7.0 : 0;
+
             const pTL = getPerspectivePoint(u0, 0.0);
             const pTR = getPerspectivePoint(u1, 0.0);
             const pBR = getPerspectivePoint(u1, 1.0);
             const pBL = getPerspectivePoint(u0, 1.0);
+            pBL.y += sink;
+            pBR.y += sink;
+
+            // Rising Laser Light Pillar
+            if (hitAnim) {
+              const beamTop = isUp ? (1.0 + 1.1 * (1 - hitAnim.progress)) : (-1.1 * (1 - hitAnim.progress));
+              const bTL = getPerspectivePoint(u0, beamTop);
+              const bTR = getPerspectivePoint(u1, beamTop);
+              const bBR = getPerspectivePoint(u1, isUp ? 1.0 : 0.0);
+              const bBL = getPerspectivePoint(u0, isUp ? 1.0 : 0.0);
+
+              ctx.save();
+              const beamGrad = ctx.createLinearGradient((bBL.x + bBR.x) / 2, (bBL.y + bBR.y) / 2, (bTL.x + bTR.x) / 2, (bTL.y + bTR.y) / 2);
+              const bAlpha = (1 - hitAnim.progress) * 0.75;
+              const bCol = hitAnim.isChord ? '250, 204, 21' : '56, 189, 248';
+              beamGrad.addColorStop(0, `rgba(${bCol}, ${bAlpha})`);
+              beamGrad.addColorStop(1, `rgba(${bCol}, 0)`);
+              ctx.fillStyle = beamGrad;
+              ctx.beginPath();
+              ctx.moveTo(bBL.x, bBL.y);
+              ctx.lineTo(bBR.x, bBR.y);
+              ctx.lineTo(bTR.x, bTR.y);
+              ctx.lineTo(bTL.x, bTL.y);
+              ctx.closePath();
+              ctx.fill();
+              ctx.restore();
+            }
 
             ctx.save();
             const padGrad = ctx.createLinearGradient((pTL.x + pTR.x) / 2, (pTL.y + pTR.y) / 2, (pBL.x + pBR.x) / 2, (pBL.y + pBR.y) / 2);
-            padGrad.addColorStop(0, '#1e293b');
-            padGrad.addColorStop(0.4, '#0f172a');
-            padGrad.addColorStop(1, '#020617');
+            if (hitAnim) {
+              const hp = 1 - hitAnim.progress;
+              if (hitAnim.isChord) {
+                padGrad.addColorStop(0, '#ca8a04');
+                padGrad.addColorStop(0.5, '#a16207');
+                padGrad.addColorStop(1, '#0f172a');
+              } else {
+                padGrad.addColorStop(0, '#0284c7');
+                padGrad.addColorStop(0.5, '#0369a1');
+                padGrad.addColorStop(1, '#0f172a');
+              }
+              ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
+              ctx.shadowBlur = 20 * hp;
+            } else {
+              padGrad.addColorStop(0, '#1e293b');
+              padGrad.addColorStop(0.4, '#0f172a');
+              padGrad.addColorStop(1, '#020617');
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.35)';
+              ctx.shadowBlur = 8;
+            }
 
             ctx.fillStyle = padGrad;
-            ctx.strokeStyle = '#f8fafc';
-            ctx.lineWidth = 2;
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.35)';
-            ctx.shadowBlur = 8;
+            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#fde047' : '#38bdf8') : '#f8fafc';
+            ctx.lineWidth = hitAnim ? 3.2 : 2;
             ctx.beginPath();
             ctx.moveTo(pTL.x, pTL.y);
             ctx.lineTo(pTR.x, pTR.y);
@@ -1699,6 +2111,18 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             const laneLabel = isLeft ? `L${l + 1}` : `R${l - Math.floor(numLanes / 2) + 1}`;
             ctx.fillText(laneLabel, padMidX, padMidY);
             ctx.restore();
+
+            if (hitAnim) {
+              const shockR = 8 + hitAnim.progress * 35;
+              const hitCenter = getPerspectivePoint((u0 + u1) / 2, isUp ? 1.0 : 0.0);
+              ctx.save();
+              ctx.beginPath();
+              ctx.ellipse(hitCenter.x, hitCenter.y, shockR, shockR * 0.45, 0, 0, Math.PI * 2);
+              ctx.strokeStyle = hitAnim.isChord ? `rgba(250, 204, 21, ${1 - hitAnim.progress})` : `rgba(56, 189, 248, ${1 - hitAnim.progress})`;
+              ctx.lineWidth = 2.6 * (1 - hitAnim.progress);
+              ctx.stroke();
+              ctx.restore();
+            }
           }
         }
 
@@ -1724,6 +2148,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.textAlign = 'left';
         ctx.fillText('PERFECT ⚡', hitR.x + 10, hitR.y);
         ctx.restore();
+
+        // 2e. Real Hand Foreground Rendering: Composite the player's physical hands ON TOP of the piano keys!
+        renderRealHandForeground(ctx, hands, videoEl, width, height);
 
 
         // 2g. Holographic Energy Rings on ALL 10 Fingers (5 Left + 5 Right)
@@ -2063,6 +2490,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 // Check note hit on this lane
                 const hit = hitDetector.evaluateLaneHit(lane, currentTimeSec, currentChart.notes);
                 if (hit) {
+                  hit.note.playedSound = true;
                   soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
                   soundEngine.playFeedback(hit.judgement);
 
@@ -2071,6 +2499,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                   arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
 
                   const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
+                  triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
                   arScene.triggerHitVFX(laneOrMidi, hit.judgement);
                   arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
                   arScene.worldReaction.setCombo(arUI.scoreManager.combo);
@@ -2083,6 +2512,21 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         // 2. Gameplay state updates
         if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
           const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
+
+          // Melodic song audio playback: ensure notes crossing Hit Line play the song's musical notes
+          if (Array.isArray(currentChart.notes)) {
+            for (const note of currentChart.notes) {
+              if (!note.playedSound && currentTimeSec >= note.timeSec) {
+                note.playedSound = true;
+                const midiOrNote = note.note || note.midi;
+                if (midiOrNote) {
+                  soundEngine.playNote(midiOrNote, note.durationSec || 0.35, note.velocity ? Math.max(0.65, note.velocity) : 0.8);
+                }
+                const laneOrMidi = (currentViewMode === 'roll' && note.midi) ? note.midi : (note.lane ?? 0);
+                triggerKeyHitAnimation(laneOrMidi, 'PERFECT', Boolean(note.type === 'chord' || note.isChord));
+              }
+            }
+          }
 
           // Check for missed notes
           const missedNotes = hitDetector.checkMissedNotes(currentTimeSec, currentChart.notes);

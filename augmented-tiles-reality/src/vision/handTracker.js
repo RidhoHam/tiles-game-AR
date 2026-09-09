@@ -325,6 +325,15 @@ export function mapToArenaSpace(input, config = {}) {
       z: typeof input.pinkyTip.z === 'number' ? input.pinkyTip.z : 0
     };
   }
+  if (input.wrist) {
+    const rawX = typeof input.wrist.x === 'number' ? input.wrist.x : 0.5;
+    const rawY = typeof input.wrist.y === 'number' ? input.wrist.y : 0.5;
+    mapped.cameraWrist = {
+      x: mirror ? 1.0 - rawX : rawX,
+      y: rawY,
+      z: typeof input.wrist.z === 'number' ? input.wrist.z : 0
+    };
+  }
 
   if (input.indexTip) mapped.indexTip = transformPoint(input.indexTip);
   if (input.thumbTip) mapped.thumbTip = transformPoint(input.thumbTip);
@@ -334,6 +343,11 @@ export function mapToArenaSpace(input, config = {}) {
   if (input.pinkyTip) mapped.pinkyTip = transformPoint(input.pinkyTip);
   if (Array.isArray(input.rawLandmarks)) {
     mapped.rawLandmarks = input.rawLandmarks.map(transformPoint);
+    mapped.cameraLandmarks = input.rawLandmarks.map(pt => ({
+      x: mirror ? 1.0 - (typeof pt.x === 'number' ? pt.x : 0.5) : (typeof pt.x === 'number' ? pt.x : 0.5),
+      y: typeof pt.y === 'number' ? pt.y : 0.5,
+      z: typeof pt.z === 'number' ? pt.z : 0
+    }));
   }
 
   return mapped;
@@ -625,6 +639,12 @@ export class HandTracker {
         const smoothedCamPinky = (raw.cameraPinkyTip && prev.cameraPinkyTip)
           ? applyEmaSmoothing(prev.cameraPinkyTip, raw.cameraPinkyTip, adaptiveAlpha)
           : (raw.cameraPinkyTip || null);
+        const smoothedCamWrist = (raw.cameraWrist && prev.cameraWrist)
+          ? applyEmaSmoothing(prev.cameraWrist, raw.cameraWrist, adaptiveAlpha)
+          : (raw.cameraWrist || null);
+        const smoothedCamLandmarks = (raw.cameraLandmarks && prev.cameraLandmarks)
+          ? raw.cameraLandmarks.map((pt, i) => applyEmaSmoothing(prev.cameraLandmarks[i], pt, adaptiveAlpha))
+          : (raw.cameraLandmarks || null);
 
         const vx = dt > 0 ? (smoothedIndex.x - prev.indexTip.x) / dt : 0;
         const vy = dt > 0 ? (smoothedIndex.y - prev.indexTip.y) / dt : 0;
@@ -657,6 +677,8 @@ export class HandTracker {
           cameraMiddleTip: smoothedCamMiddle,
           cameraRingTip: smoothedCamRing,
           cameraPinkyTip: smoothedCamPinky,
+          cameraWrist: smoothedCamWrist,
+          cameraLandmarks: smoothedCamLandmarks,
           velocity: {
             x: Number(vx.toFixed(4)),
             y: Number(vy.toFixed(4)),

@@ -116,10 +116,25 @@ export class SoundEngine {
     this.sampleBuffers = new Map();
     this.pendingLoads = new Map();
     this.isInitialized = false;
+    this.isMuted = false;
   }
 
   async init() {
     return this.initAudio();
+  }
+
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    if (this.masterGain && this.ctx) {
+      const now = this.ctx.currentTime || 0;
+      const targetVol = this.isMuted ? 0 : this.volume;
+      if (this.masterGain.gain?.setValueAtTime) {
+        this.masterGain.gain.setValueAtTime(targetVol, now);
+      } else if (this.masterGain.gain) {
+        this.masterGain.gain.value = targetVol;
+      }
+    }
+    return this.isMuted;
   }
 
   initAudio() {
@@ -271,6 +286,10 @@ export class SoundEngine {
   }
 
   playNote(midi, duration = 0.5, velocity = 0.8) {
+    if (this.isMuted) return null;
+    if (!this.ctx) {
+      this.initAudio();
+    }
     if (!this.ctx) return null;
     if (this.ctx.state === 'suspended' && typeof this.ctx.resume === 'function') {
       this.ctx.resume().catch(() => {});
@@ -376,8 +395,8 @@ export class SoundEngine {
 
     // Natural piano amplitude envelope: rapid hammer attack + gentle sustain decay
     const gain = this.ctx.createGain();
-    const peakVol = Math.max(0.01, velocity * 0.4);
-    const releaseSec = 0.35;
+    const peakVol = Math.max(0.08, velocity * 0.85);
+    const releaseSec = 0.38;
 
     if (gain.gain?.setValueAtTime) {
       gain.gain.setValueAtTime(0.0001, now);
@@ -385,7 +404,8 @@ export class SoundEngine {
         gain.gain.linearRampToValueAtTime(peakVol, now + 0.004); // 4ms attack
       }
       if (gain.gain.exponentialRampToValueAtTime) {
-        gain.gain.exponentialRampToValueAtTime(peakVol * 0.65, now + 0.08); // hammer strike transient
+        const decayTime = Math.max(now + 0.05, now + Math.min(0.08, duration * 0.5));
+        gain.gain.exponentialRampToValueAtTime(peakVol * 0.70, decayTime); // hammer strike transient
         gain.gain.exponentialRampToValueAtTime(0.0001, now + duration + releaseSec); // sustain decay
       }
     }
