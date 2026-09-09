@@ -16,7 +16,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
     const fingerController = new FingerInteractionController({
       debounceCooldownSec: 0.075,
-      pressVelocityThreshold: 0.015
+      pressVelocityThreshold: 0.015,
+      primaryFingerOnly: true
     });
     let debugHandHitbox = false;
     let lastHitJudgement = null;
@@ -33,11 +34,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let isCameraMirrored = localStorage.getItem('ar_camera_mirrored') !== 'false'; // Default TRUE (mirrored webcam)
 
     let savedFlowDir = localStorage.getItem('ar_flow_direction');
-    if (!savedFlowDir || savedFlowDir === 'up') {
-      savedFlowDir = 'down';
-      localStorage.setItem('ar_flow_direction', 'down');
-    }
-    let flowDirection = savedFlowDir || 'down'; // Default: 'down' (Atas ke Bawah - standard falling notes)
+    let flowDirection = (savedFlowDir === 'up' || savedFlowDir === 'down') ? savedFlowDir : 'down';
 
     function isValidCorners(c) {
       return Boolean(
@@ -2255,130 +2252,128 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           ctx.restore();
         }
 
-        // 2e. AR Real-Time Holographic Fingertip Trackers
-        // Bridges camera hand detection with the virtual piano canvas
+        // 2e. AR Real-Time Holographic Fingertip Trackers (1 clean cursor per hand)
         if (Array.isArray(hands) && hands.length > 0 && corners) {
-          const fingerDefs = [
-            { key: 'thumbTip', camKey: 'cameraThumbTip' },
-            { key: 'indexTip', camKey: 'cameraIndexTip' },
-            { key: 'middleTip', camKey: 'cameraMiddleTip' },
-            { key: 'ringTip', camKey: 'cameraRingTip' },
-            { key: 'pinkyTip', camKey: 'cameraPinkyTip' }
-          ];
+          for (let hIdx = 0; hIdx < hands.length; hIdx++) {
+            const h = hands[hIdx];
+            if (!h) continue;
 
-          for (const h of hands) {
-            for (const f of fingerDefs) {
-              const screenPt = getScreenPoint(h[f.camKey], h[f.key], width, height);
-              if (!screenPt) continue;
+            const handName = String(h.handedness || (hIdx === 0 ? 'Right' : 'Left')).toLowerCase().startsWith('l') ? 'Left' : 'Right';
+            const handShort = handName === 'Left' ? 'L' : 'R';
 
-              const lane = getLaneFromScreenPoint(screenPt, corners, numLanes);
-              const isOverPiano = lane >= 0;
+            // Find primary active finger (prefer index, or active downward tapping finger)
+            let chosenPt = getScreenPoint(h.cameraIndexTip || h.indexTip, h.indexTip, width, height);
 
-              ctx.save();
-              if (isOverPiano) {
-                // Active hover over virtual piano lane!
-                const pulse = 1 + Math.sin(time / 90) * 0.15;
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 2.4;
-                ctx.shadowColor = '#38bdf8';
-                ctx.shadowBlur = 14;
-                ctx.beginPath();
-                ctx.arc(screenPt.x, screenPt.y, 10 * pulse, 0, Math.PI * 2);
-                ctx.stroke();
-
-                // Bright center core
-                ctx.fillStyle = '#ffffff';
-                ctx.shadowBlur = 6;
-                ctx.beginPath();
-                ctx.arc(screenPt.x, screenPt.y, 3.5, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Small lane indicator badge above finger
-                ctx.font = 'bold 10px "Outfit", sans-serif';
-                ctx.fillStyle = '#38bdf8';
-                ctx.textAlign = 'center';
-                ctx.fillText(`L${lane + 1}`, screenPt.x, screenPt.y - 15);
-              } else {
-                // Subtle tracking dot when hand is on desk outside piano
-                ctx.fillStyle = 'rgba(56, 189, 248, 0.40)';
-                ctx.beginPath();
-                ctx.arc(screenPt.x, screenPt.y, 4, 0, Math.PI * 2);
-                ctx.fill();
+            if (!chosenPt) {
+              const defs = [
+                { cam: 'cameraThumbTip', tip: 'thumbTip' },
+                { cam: 'cameraMiddleTip', tip: 'middleTip' },
+                { cam: 'cameraRingTip', tip: 'ringTip' },
+                { cam: 'cameraPinkyTip', tip: 'pinkyTip' }
+              ];
+              for (const d of defs) {
+                const pt = getScreenPoint(h[d.cam] || h[d.tip], h[d.tip], width, height);
+                if (pt) {
+                  chosenPt = pt;
+                  break;
+                }
               }
-              ctx.restore();
             }
+
+            if (!chosenPt) continue;
+
+            const lane = getLaneFromScreenPoint(chosenPt, corners, (viewMode === 'roll') ? 14 : numLanes);
+            const isOverPiano = lane >= 0;
+
+            ctx.save();
+            if (isOverPiano) {
+              const pulse = 1 + Math.sin(time / 90) * 0.15;
+              ctx.strokeStyle = '#38bdf8';
+              ctx.lineWidth = 2.5;
+              ctx.shadowColor = '#38bdf8';
+              ctx.shadowBlur = 14;
+              ctx.beginPath();
+              ctx.arc(chosenPt.x, chosenPt.y, 11 * pulse, 0, Math.PI * 2);
+              ctx.stroke();
+
+              // Bright white center core
+              ctx.fillStyle = '#ffffff';
+              ctx.shadowBlur = 6;
+              ctx.beginPath();
+              ctx.arc(chosenPt.x, chosenPt.y, 3.5, 0, Math.PI * 2);
+              ctx.fill();
+
+              // Clean label above finger: e.g. "L:2" or "R:5"
+              ctx.font = 'bold 11px "Outfit", sans-serif';
+              ctx.fillStyle = '#38bdf8';
+              ctx.textAlign = 'center';
+              ctx.fillText(`${handShort}:${lane + 1}`, chosenPt.x, chosenPt.y - 16);
+            } else {
+              // Subtle tracking dot when hand is on desk outside piano
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+              ctx.beginPath();
+              ctx.arc(chosenPt.x, chosenPt.y, 4.5, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.restore();
           }
         }
 
-        // 2f. Screen-Space Dynamic Piano Hitbox Debug Overlay
-        if (debugHandHitbox) {
-          const numHitboxLanes = (viewMode === 'roll') ? 14 : numLanes;
-          const activeFingers = fingerController ? fingerController.getFingerStates(true) : [];
-          const hoverLanes = fingerController ? fingerController.getHoverLanes() : new Set();
+        // 2f. Visible Rectangular Hitbox Borders per Lane ("hanya sebatas border line persegi aja")
+        // Always visible so the player clearly sees each lane's key hitbox boundary outline
+        const numHitboxLanes = (viewMode === 'roll') ? 14 : numLanes;
+        const activeFingers = fingerController ? fingerController.getFingerStates(true) : [];
+        const hoverLanes = fingerController ? fingerController.getHoverLanes() : new Set();
 
-          const pressingLanes = new Set();
-          for (const f of activeFingers) {
-            if ((f.state === 'PRESSING' || f.state === 'TRIGGERED') && f.lane >= 0) {
-              pressingLanes.add(f.lane);
-            }
+        const pressingLanes = new Set();
+        for (const f of activeFingers) {
+          if ((f.state === 'PRESSING' || f.state === 'TRIGGERED') && f.lane >= 0) {
+            pressingLanes.add(f.lane);
           }
+        }
 
-          // 1. Render stationary piano lane hitboxes [ HB0 ][ HB1 ]... with color coding
-          // (blue for idle, yellow for hover, cyan for press)
-          ctx.save();
-          for (let l = 0; l < numHitboxLanes; l++) {
-            const u0 = l / numHitboxLanes;
-            const u1 = (l + 1) / numHitboxLanes;
+        ctx.save();
+        for (let l = 0; l < numHitboxLanes; l++) {
+          const u0 = (l / numHitboxLanes) + 0.003;
+          const u1 = ((l + 1) / numHitboxLanes) - 0.003;
 
-            const hbTL = getPerspectivePoint(u0, 0.0);
-            const hbTR = getPerspectivePoint(u1, 0.0);
-            const hbBR = getPerspectivePoint(u1, 1.0);
-            const hbBL = getPerspectivePoint(u0, 1.0);
+          const hbTL = getPerspectivePoint(u0, keyBaseT);
+          const hbTR = getPerspectivePoint(u1, keyBaseT);
+          const hbBR = getPerspectivePoint(u1, keyTipT);
+          const hbBL = getPerspectivePoint(u0, keyTipT);
 
-            const isPress = pressingLanes.has(l);
-            const isHov = hoverLanes.has(l);
+          const isPress = pressingLanes.has(l);
+          const isHov = hoverLanes.has(l);
 
-            let strokeColor, fillColor, labelColor;
-            if (isPress) {
-              strokeColor = '#06b6d4'; // Cyan for press
-              fillColor = 'rgba(6, 182, 212, 0.35)';
-              labelColor = '#22d3ee';
-            } else if (isHov) {
-              strokeColor = '#facc15'; // Yellow for hover
-              fillColor = 'rgba(250, 204, 21, 0.28)';
-              labelColor = '#fde047';
-            } else {
-              strokeColor = '#3b82f6'; // Blue for idle
-              fillColor = 'rgba(59, 130, 246, 0.12)';
-              labelColor = '#60a5fa';
-            }
+          ctx.beginPath();
+          ctx.moveTo(hbTL.x, hbTL.y);
+          ctx.lineTo(hbTR.x, hbTR.y);
+          ctx.lineTo(hbBR.x, hbBR.y);
+          ctx.lineTo(hbBL.x, hbBL.y);
+          ctx.closePath();
 
-            ctx.beginPath();
-            ctx.moveTo(hbTL.x, hbTL.y);
-            ctx.lineTo(hbTR.x, hbTR.y);
-            ctx.lineTo(hbBR.x, hbBR.y);
-            ctx.lineTo(hbBL.x, hbBL.y);
-            ctx.closePath();
-
-            ctx.fillStyle = fillColor;
-            ctx.fill();
-            ctx.strokeStyle = strokeColor;
-            ctx.lineWidth = isPress ? 3.0 : (isHov ? 2.5 : 1.5);
-            ctx.shadowColor = strokeColor;
-            ctx.shadowBlur = isPress ? 12 : (isHov ? 8 : 4);
-            ctx.stroke();
-
-            // Hitbox label [ HB0 ], [ HB1 ] ...
-            const hbMidX = (hbTL.x + hbTR.x + hbBR.x + hbBL.x) / 4;
-            const hbMidY = (hbTL.y + hbTR.y + hbBR.y + hbBL.y) / 4;
+          // Strictly rectangular border line outline ONLY - no opaque fill!
+          if (isPress) {
+            ctx.strokeStyle = '#06b6d4'; // Bright cyan on downward press
+            ctx.lineWidth = 3.2;
+            ctx.shadowColor = '#06b6d4';
+            ctx.shadowBlur = 14;
+          } else if (isHov) {
+            ctx.strokeStyle = '#facc15'; // Glowing yellow on finger hover
+            ctx.lineWidth = 2.4;
+            ctx.shadowColor = '#facc15';
+            ctx.shadowBlur = 8;
+          } else {
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.40)'; // Clean crisp neon cyan outline
+            ctx.lineWidth = 1.4;
             ctx.shadowBlur = 0;
-            ctx.font = 'bold 11px monospace';
-            ctx.fillStyle = labelColor;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-            ctx.fillText(`[ HB${l} ]`, hbMidX, hbMidY);
           }
-          ctx.restore();
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // 2g. Optional Debug Status Card (Only shown when 'H' is toggled on)
+        if (debugHandHitbox) {
 
           // 2. Draw small semi-transparent debug status card
           // Showing: Hand, Finger, Lane, State ('HOVER'/'PRESSING'), VelocityY, and last judgement

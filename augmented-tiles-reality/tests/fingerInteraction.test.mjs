@@ -381,3 +381,28 @@ test('FingerInteractionController constructor options, setFingerState, and reset
   assert.equal(controller.getHoverLanes().size, 0);
   assert.equal(controller.getFingerState('Right', 'index'), null);
 });
+
+test('primaryFingerOnly prioritizes 1 finger per hand to support clean 2-finger playstyle', () => {
+  const controller = new FingerInteractionController({
+    screenWidth: 1000,
+    screenHeight: 1000,
+    primaryFingerOnly: true
+  });
+
+  // Hand with 3 fingers on desk (index, middle, ring)
+  const hand = {
+    handedness: 'Right',
+    fingers: {
+      index: { x: 0.35, y: 0.30 },
+      middle: { x: 0.45, y: 0.30 },
+      ring: { x: 0.55, y: 0.30 }
+    }
+  };
+
+  controller.update([hand], MOCK_RECT_CORNERS, 8, 0.0);
+
+  // In primaryFingerOnly mode, only index is tracked as the primary finger
+  const activeLanes = [...controller.getHoverLanes()];
+  assert.equal(activeLanes.length, 1, 'Only 1 lane should be hovered when playing 1-finger-per-hand');
+  assert.equal(activeLanes[0], 2, 'Index finger lane (Lane 2) should be the single hovered lane');
+});

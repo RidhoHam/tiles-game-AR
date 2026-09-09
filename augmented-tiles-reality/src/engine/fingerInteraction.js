@@ -130,6 +130,7 @@ export class FingerInteractionController {
     this.screenWidth = options.screenWidth ?? defaultW;
     this.screenHeight = options.screenHeight ?? defaultH;
     this.getScreenPoint = typeof options.getScreenPoint === 'function' ? options.getScreenPoint : null;
+    this.primaryFingerOnly = options.primaryFingerOnly ?? false;
 
     // Per-hand and per-finger states: Map<string, Object>
     // Key: `${hand}:${finger}` (e.g. 'Right:index')
@@ -300,8 +301,22 @@ export class FingerInteractionController {
       }
       const handName = String(rawHand).toLowerCase().startsWith('l') ? 'Left' : 'Right';
 
-      // Check all 5 fingers
-      for (const fingerName of FINGER_NAMES) {
+      // Select fingers to track: when primaryFingerOnly is enabled, track 1 primary finger per hand (index or active tapping finger)
+      let fingerNames = FINGER_NAMES;
+      if (this.primaryFingerOnly) {
+        let activeStrikingFinger = null;
+        for (const fn of FINGER_NAMES) {
+          const pt = this._extractFingerPoint(hand, fn);
+          if (pt && typeof pt.velocityY === 'number' && pt.velocityY > this.pressVelocityThreshold) {
+            activeStrikingFinger = fn;
+            break;
+          }
+        }
+        fingerNames = activeStrikingFinger ? [activeStrikingFinger] : ['index'];
+      }
+
+      const handPressEvents = [];
+      for (const fingerName of fingerNames) {
         const fingerKey = this._getFingerKey(handName, fingerName);
         const rawPt = this._extractFingerPoint(hand, fingerName);
 
@@ -381,7 +396,7 @@ export class FingerInteractionController {
                 stateObj.state = FINGER_STATES.PRESSING;
                 stateObj.lastTriggerTimeSec = timeSec;
 
-                pressEvents.push({
+                handPressEvents.push({
                   hand: handName,
                   finger: fingerName,
                   lane,
@@ -419,7 +434,7 @@ export class FingerInteractionController {
                 stateObj.state = FINGER_STATES.PRESSING;
                 stateObj.lastTriggerTimeSec = timeSec;
 
-                pressEvents.push({
+                handPressEvents.push({
                   hand: handName,
                   finger: fingerName,
                   lane,
@@ -442,6 +457,13 @@ export class FingerInteractionController {
 
         // Store normY for next frame velocity computation
         stateObj.previousNormY = normY;
+      }
+
+      if (this.primaryFingerOnly && handPressEvents.length > 1) {
+        handPressEvents.sort((a, b) => b.velocityY - a.velocityY);
+        pressEvents.push(handPressEvents[0]);
+      } else {
+        pressEvents.push(...handPressEvents);
       }
     }
 
