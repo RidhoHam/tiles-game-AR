@@ -74,6 +74,14 @@
         </div>
       </div>
 
+      <!-- Finger Tracking Mode (2-Finger vs 10-Finger) -->
+      <div class="game-mode-section" style="margin-top: 4px;">
+        <div class="game-mode-tabs" id="arFingerModeTabs">
+          <button type="button" class="game-mode-tab active" id="btn-finger-2" title="Mode 2 Jari: 1 jari per tangan (telunjuk). Aman dari salah sentuh jari samping.">✌️ 2 Jari (1/Tangan)</button>
+          <button type="button" class="game-mode-tab" id="btn-finger-all" title="Mode Semua Jari: 10 jari aktif (Jempol, Telunjuk, Tengah, Manis, Kelingking).">🖐️ Semua Jari (10 Jari)</button>
+        </div>
+      </div>
+
       <!-- Song Selector -->
       <div class=song-list>
         <div class=song-item selected data-song-id=demo_canon>
@@ -160,6 +168,7 @@
 
       <div class=hud-actions>
         <button id="btn-hud-gamemode" class="hud-badge-pill gamemode-btn" title="Klik untuk ganti mode: Interactive / Auto-Play / Stop Chord / Stop All">🎮 Interactive</button>
+        <button id="btn-hud-fingers" class="hud-badge-pill" title="Toggle Mode Jari: 2 Jari (1/tangan) vs Semua Jari (10 Jari) [F]">✌️ 2 Jari [F]</button>
         <button id="hud-mode-badge" class="hud-badge-pill" title="Klik untuk beralih tampilan (Tiles / Real Piano)">🎮 Tiles</button>
         <button id="hud-slam-badge" class="hud-badge-pill slam-pill" title="Ayunkan Jempol ke Bawah atau Tekan Space untuk Chord Slam!">⚡ THUMB SLAM [Space]</button>
         <button id="btn-hud-mirror" class="icon-btn" title="Toggle Mirror Kamera">🔄</button>

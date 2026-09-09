@@ -405,4 +405,14 @@ test('primaryFingerOnly prioritizes 1 finger per hand to support clean 2-finger 
   const activeLanes = [...controller.getHoverLanes()];
   assert.equal(activeLanes.length, 1, 'Only 1 lane should be hovered when playing 1-finger-per-hand');
   assert.equal(activeLanes[0], 2, 'Index finger lane (Lane 2) should be the single hovered lane');
+
+  // Now dynamically switch to All Fingers Mode
+  controller.setPrimaryFingerOnly(false);
+  assert.equal(controller.primaryFingerOnly, false);
+  controller.update([hand], MOCK_RECT_CORNERS, 8, 0.016);
+  const allLanes = [...controller.getHoverLanes()];
+  assert.equal(allLanes.length, 3, 'All 3 active fingers on desk must be tracked when setPrimaryFingerOnly(false)');
+  assert.ok(allLanes.includes(2), 'Index lane 2 tracked');
+  assert.ok(allLanes.includes(3), 'Middle lane 3 tracked');
+  assert.ok(allLanes.includes(4), 'Ring lane 4 tracked');
 });

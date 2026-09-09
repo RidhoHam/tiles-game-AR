@@ -141,6 +141,15 @@ export class FingerInteractionController {
   }
 
   /**
+   * Sets whether only 1 primary finger per hand is tracked (2-finger mode)
+   * or all 10 fingers across both hands are tracked (all-fingers mode).
+   * @param {boolean} enabled
+   */
+  setPrimaryFingerOnly(enabled) {
+    this.primaryFingerOnly = Boolean(enabled);
+  }
+
+  /**
    * Helper to format consistent map key
    * @private
    */

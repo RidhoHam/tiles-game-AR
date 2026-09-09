@@ -14,10 +14,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let soundEngine = null;
     let arUI = null;
 
+    let isPrimaryFingerOnly = localStorage.getItem('ar_primary_finger_only') !== 'false'; // Default TRUE (2 fingers)
     const fingerController = new FingerInteractionController({
       debounceCooldownSec: 0.075,
       pressVelocityThreshold: 0.015,
-      primaryFingerOnly: true
+      primaryFingerOnly: isPrimaryFingerOnly
     });
     let debugHandHitbox = false;
     let lastHitJudgement = null;
@@ -377,9 +378,45 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         showToast(`Mode Permainan: ${GAME_MODE_LABELS[nextMode]}`);
       });
 
+      // Finger Tracking Mode Switcher (2 Jari vs Semua Jari)
+      const btnFinger2 = document.getElementById('btn-finger-2');
+      const btnFingerAll = document.getElementById('btn-finger-all');
+      const btnHudFingers = document.getElementById('btn-hud-fingers');
+
+      const setFingerTrackingMode = (primaryOnly, showNotification = true) => {
+        isPrimaryFingerOnly = Boolean(primaryOnly);
+        fingerController.setPrimaryFingerOnly(isPrimaryFingerOnly);
+        try { localStorage.setItem('ar_primary_finger_only', String(isPrimaryFingerOnly)); } catch (_) {}
+
+        btnFinger2?.classList.toggle('active', isPrimaryFingerOnly);
+        btnFingerAll?.classList.toggle('active', !isPrimaryFingerOnly);
+
+        if (btnHudFingers) {
+          btnHudFingers.innerText = isPrimaryFingerOnly ? '✌️ 2 Jari [F]' : '🖐️ 10 Jari [F]';
+        }
+
+        if (showNotification) {
+          showArToast(
+            isPrimaryFingerOnly
+              ? '✌️ Mode Jari: 2 JARI (1 per Tangan) — Mengisolasi jari utama, aman dari sentuhan meja.'
+              : '🖐️ Mode Jari: SEMUA JARI (10 Jari Aktif) — Setiap jari di kedua tangan bisa menekan tuts!',
+            'info',
+            3000
+          );
+        }
+      };
+
+      btnFinger2?.addEventListener('click', () => setFingerTrackingMode(true));
+      btnFingerAll?.addEventListener('click', () => setFingerTrackingMode(false));
+      btnHudFingers?.addEventListener('click', (e) => {
+        e.preventDefault();
+        setFingerTrackingMode(!isPrimaryFingerOnly);
+      });
+
       // Apply initial modes
       setViewMode(currentViewMode);
       setGameMode(currentGameMode);
+      setFingerTrackingMode(isPrimaryFingerOnly, false);
 
       // Song Select Items
       const songItems = document.querySelectorAll('.song-item');
@@ -917,6 +954,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           debugHandHitbox ? 'info' : 'warning',
           2500
         );
+      } else if (e.key === 'f' || e.key === 'F') {
+        setFingerTrackingMode(!isPrimaryFingerOnly);
       }
     });
 
@@ -2252,7 +2291,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           ctx.restore();
         }
 
-        // 2e. AR Real-Time Holographic Fingertip Trackers (1 clean cursor per hand)
+        // 2e. AR Real-Time Holographic Fingertip Trackers (1 clean cursor per hand in 2-finger mode, or all 5 fingertips per hand in all-fingers mode)
         if (Array.isArray(hands) && hands.length > 0 && corners) {
           for (let hIdx = 0; hIdx < hands.length; hIdx++) {
             const h = hands[hIdx];
@@ -2261,61 +2300,112 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             const handName = String(h.handedness || (hIdx === 0 ? 'Right' : 'Left')).toLowerCase().startsWith('l') ? 'Left' : 'Right';
             const handShort = handName === 'Left' ? 'L' : 'R';
 
-            // Find primary active finger (prefer index, or active downward tapping finger)
-            let chosenPt = getScreenPoint(h.cameraIndexTip || h.indexTip, h.indexTip, width, height);
-
-            if (!chosenPt) {
-              const defs = [
-                { cam: 'cameraThumbTip', tip: 'thumbTip' },
-                { cam: 'cameraMiddleTip', tip: 'middleTip' },
-                { cam: 'cameraRingTip', tip: 'ringTip' },
-                { cam: 'cameraPinkyTip', tip: 'pinkyTip' }
+            if (fingerController && !fingerController.primaryFingerOnly) {
+              // ALL FINGERS MODE: Draw active cursors for all 5 fingertips per hand
+              const FINGERS_MAP = [
+                { name: 'thb', cam: 'cameraThumbTip', tip: 'thumbTip', rawIdx: 4 },
+                { name: 'idx', cam: 'cameraIndexTip', tip: 'indexTip', rawIdx: 8 },
+                { name: 'mid', cam: 'cameraMiddleTip', tip: 'middleTip', rawIdx: 12 },
+                { name: 'rng', cam: 'cameraRingTip', tip: 'ringTip', rawIdx: 16 },
+                { name: 'pnk', cam: 'cameraPinkyTip', tip: 'pinkyTip', rawIdx: 20 }
               ];
-              for (const d of defs) {
-                const pt = getScreenPoint(h[d.cam] || h[d.tip], h[d.tip], width, height);
-                if (pt) {
-                  chosenPt = pt;
-                  break;
+
+              for (const f of FINGERS_MAP) {
+                let pt = getScreenPoint(h[f.cam] || h[f.tip], h[f.tip], width, height);
+                if (!pt && h.rawLandmarks && h.rawLandmarks[f.rawIdx]) {
+                  pt = getScreenPoint(h.rawLandmarks[f.rawIdx], null, width, height);
+                }
+                if (!pt) continue;
+
+                const lane = getLaneFromScreenPoint(pt, corners, (viewMode === 'roll') ? 14 : numLanes);
+                const isOverPiano = lane >= 0;
+
+                ctx.save();
+                if (isOverPiano) {
+                  const pulse = 1 + Math.sin(time / 90) * 0.15;
+                  ctx.strokeStyle = '#38bdf8';
+                  ctx.lineWidth = 2.4;
+                  ctx.shadowColor = '#38bdf8';
+                  ctx.shadowBlur = 10;
+                  ctx.beginPath();
+                  ctx.arc(pt.x, pt.y, 9 * pulse, 0, Math.PI * 2);
+                  ctx.stroke();
+
+                  ctx.fillStyle = '#ffffff';
+                  ctx.shadowBlur = 4;
+                  ctx.beginPath();
+                  ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
+                  ctx.fill();
+
+                  ctx.font = 'bold 10px "Outfit", sans-serif';
+                  ctx.fillStyle = '#38bdf8';
+                  ctx.textAlign = 'center';
+                  ctx.fillText(`${handShort}:${f.name}`, pt.x, pt.y - 13);
+                } else {
+                  ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+                  ctx.beginPath();
+                  ctx.arc(pt.x, pt.y, 3.5, 0, Math.PI * 2);
+                  ctx.fill();
+                }
+                ctx.restore();
+              }
+            } else {
+              // PRIMARY FINGER ONLY MODE: 1 clean cursor per hand (default / 2-finger mode)
+              let chosenPt = getScreenPoint(h.cameraIndexTip || h.indexTip, h.indexTip, width, height);
+
+              if (!chosenPt) {
+                const defs = [
+                  { cam: 'cameraThumbTip', tip: 'thumbTip' },
+                  { cam: 'cameraMiddleTip', tip: 'middleTip' },
+                  { cam: 'cameraRingTip', tip: 'ringTip' },
+                  { cam: 'cameraPinkyTip', tip: 'pinkyTip' }
+                ];
+                for (const d of defs) {
+                  const pt = getScreenPoint(h[d.cam] || h[d.tip], h[d.tip], width, height);
+                  if (pt) {
+                    chosenPt = pt;
+                    break;
+                  }
                 }
               }
+
+              if (!chosenPt) continue;
+
+              const lane = getLaneFromScreenPoint(chosenPt, corners, (viewMode === 'roll') ? 14 : numLanes);
+              const isOverPiano = lane >= 0;
+
+              ctx.save();
+              if (isOverPiano) {
+                const pulse = 1 + Math.sin(time / 90) * 0.15;
+                ctx.strokeStyle = '#38bdf8';
+                ctx.lineWidth = 2.5;
+                ctx.shadowColor = '#38bdf8';
+                ctx.shadowBlur = 14;
+                ctx.beginPath();
+                ctx.arc(chosenPt.x, chosenPt.y, 11 * pulse, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Bright white center core
+                ctx.fillStyle = '#ffffff';
+                ctx.shadowBlur = 6;
+                ctx.beginPath();
+                ctx.arc(chosenPt.x, chosenPt.y, 3.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Clean label above finger: e.g. "L:2" or "R:5"
+                ctx.font = 'bold 11px "Outfit", sans-serif';
+                ctx.fillStyle = '#38bdf8';
+                ctx.textAlign = 'center';
+                ctx.fillText(`${handShort}:${lane + 1}`, chosenPt.x, chosenPt.y - 16);
+              } else {
+                // Subtle tracking dot when hand is on desk outside piano
+                ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+                ctx.beginPath();
+                ctx.arc(chosenPt.x, chosenPt.y, 4.5, 0, Math.PI * 2);
+                ctx.fill();
+              }
+              ctx.restore();
             }
-
-            if (!chosenPt) continue;
-
-            const lane = getLaneFromScreenPoint(chosenPt, corners, (viewMode === 'roll') ? 14 : numLanes);
-            const isOverPiano = lane >= 0;
-
-            ctx.save();
-            if (isOverPiano) {
-              const pulse = 1 + Math.sin(time / 90) * 0.15;
-              ctx.strokeStyle = '#38bdf8';
-              ctx.lineWidth = 2.5;
-              ctx.shadowColor = '#38bdf8';
-              ctx.shadowBlur = 14;
-              ctx.beginPath();
-              ctx.arc(chosenPt.x, chosenPt.y, 11 * pulse, 0, Math.PI * 2);
-              ctx.stroke();
-
-              // Bright white center core
-              ctx.fillStyle = '#ffffff';
-              ctx.shadowBlur = 6;
-              ctx.beginPath();
-              ctx.arc(chosenPt.x, chosenPt.y, 3.5, 0, Math.PI * 2);
-              ctx.fill();
-
-              // Clean label above finger: e.g. "L:2" or "R:5"
-              ctx.font = 'bold 11px "Outfit", sans-serif';
-              ctx.fillStyle = '#38bdf8';
-              ctx.textAlign = 'center';
-              ctx.fillText(`${handShort}:${lane + 1}`, chosenPt.x, chosenPt.y - 16);
-            } else {
-              // Subtle tracking dot when hand is on desk outside piano
-              ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
-              ctx.beginPath();
-              ctx.arc(chosenPt.x, chosenPt.y, 4.5, 0, Math.PI * 2);
-              ctx.fill();
-            }
-            ctx.restore();
           }
         }
 
