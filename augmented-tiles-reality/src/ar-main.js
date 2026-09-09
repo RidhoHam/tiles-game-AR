@@ -20,6 +20,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let currentChart = null;
     let loadedCustomChart = null;
 
+    let isCameraMirrored = localStorage.getItem('ar_camera_mirrored') !== 'false'; // Default TRUE (mirrored webcam)
+
     let savedFlowDir = localStorage.getItem('ar_flow_direction');
     if (!savedFlowDir || savedFlowDir === 'down') {
       savedFlowDir = 'up';
@@ -27,15 +29,32 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     }
     let flowDirection = savedFlowDir; // Default: 'up' (Bawah ke Atas - berlawanan arah dengan tangan)
 
+    function isValidCorners(c) {
+      return Boolean(
+        c && c.p1 && c.p2 && c.p3 && c.p4 &&
+        Number.isFinite(c.p1.x) && Number.isFinite(c.p1.y) &&
+        Number.isFinite(c.p2.x) && Number.isFinite(c.p2.y) &&
+        Number.isFinite(c.p3.x) && Number.isFinite(c.p3.y) &&
+        Number.isFinite(c.p4.x) && Number.isFinite(c.p4.y)
+      );
+    }
+
     // Persisted holographic desk canvas corners for seamless gameplay alignment
     let persistedCanvasCorners = null;
     try {
       const saved = localStorage.getItem('ar_canvas_corners');
-      if (saved) persistedCanvasCorners = JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (isValidCorners(parsed)) {
+          persistedCanvasCorners = parsed;
+        } else {
+          localStorage.removeItem('ar_canvas_corners');
+        }
+      }
     } catch (e) {}
 
     function saveCanvasCorners() {
-      if (persistedCanvasCorners) {
+      if (persistedCanvasCorners && isValidCorners(persistedCanvasCorners)) {
         try {
           localStorage.setItem('ar_canvas_corners', JSON.stringify(persistedCanvasCorners));
         } catch (e) {}
@@ -1412,15 +1431,6 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             }
             ctx.restore();
           }
-        } else {
-          // 0 Hands: Guide message
-          ctx.save();
-          const pulse = Math.sin(time / 250) * 3;
-          ctx.font = 'bold 14px "Outfit", sans-serif';
-          ctx.fillStyle = '#38bdf8';
-          ctx.textAlign = 'center';
-          ctx.fillText('👋 Letakkan 2 tangan di atas meja untuk membentuk kanvas piano', width / 2, (p1.y + p4.y) / 2 + pulse);
-          ctx.restore();
         }
 
         // 1j. 3-Second Dwell Hold Countdown Ring in Center of Keyboard
@@ -2407,7 +2417,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       }
     }
 
-    // Auto-bootstrap on load
-    window.addEventListener('DOMContentLoaded', () => {
+    // Auto-bootstrap on load (safe for both normal DOM loading and deferred/async ES modules)
+    if (document.readyState === 'loading') {
+      window.addEventListener('DOMContentLoaded', () => {
+        init().catch(err => console.error('AR initialization error:', err));
+      });
+    } else {
       init().catch(err => console.error('AR initialization error:', err));
-    });
+    }
