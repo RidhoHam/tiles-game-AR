@@ -73,6 +73,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let isPlaying = false;
     let songStartTimeSec = 0;
     let lastHandPositions = {};
+    let fingerLaneState = {}; // tracks {lane, hitFired} per finger to prevent false triggers on lateral movement
     let fallbackInteractionActive = false;
     let gestureCanvas = null;
     let gestureCtx = null;
@@ -641,7 +642,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
     function tagChordsInChart(chart) {
       if (!chart || !Array.isArray(chart.notes)) return chart;
-      const CHORD_TIME_WINDOW = 0.045; // 45ms window for polyphonic chords
+      const CHORD_TIME_WINDOW = 0.005; // 5ms — only truly simultaneous MIDI notes count as chords
       const notes = chart.notes;
 
       for (let i = 0; i < notes.length; i++) {
@@ -1860,11 +1861,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               const midTileX = (cFL.x + cFR.x + cBL.x + cBR.x) / 4;
               const midTileY = (cFL.y + cFR.y + cBL.y + cBR.y) / 4;
               ctx.shadowBlur = 0;
-              ctx.fillStyle = isChord ? '#000000' : '#ffffff';
+              ctx.fillStyle = '#ffffff';
               ctx.font = 'bold 12px "Outfit", sans-serif';
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.fillText(isChord ? '⚡ CHORD' : (note.note || '♪'), midTileX, midTileY);
+              ctx.fillText(note.note || '♪', midTileX, midTileY);
               ctx.restore();
             }
           }
@@ -2098,8 +2099,9 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           ctx.restore();
         }
 
-        // 2e. Natural Hand AR Compositing (User's real hands appear naturally on top of the virtual piano keys)
-        renderRealHandsOnKeyboard(ctx, hands, width, height, corners);
+        // ponytail: hand compositing disabled — destination-out creates stripe artifacts, not natural.
+        // Upgrade path: use a separate off-screen canvas with the webcam feed for proper hand reveal.
+        // renderRealHandsOnKeyboard(ctx, hands, width, height, corners);
       }
     }
 
@@ -2372,25 +2374,41 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               }
 
               if (lane >= 0) {
-                // Trigger visual key depress on the active lane
+                // Trigger visual key depress on the active lane (always, for visual feedback)
                 arScene.triggerKeyDepress(lane);
 
-                // Check note hit on this lane
-                const hit = hitDetector.evaluateLaneHit(lane, currentTimeSec, currentChart.notes);
-                if (hit) {
-                  hit.note.played = true;
-                  hit.note.playedSound = true;
-                  soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
+                // Per-finger debounce: only trigger hit when finger ENTERS a new lane
+                const prevState = fingerLaneState[trackKey];
+                const isNewLane = !prevState || prevState.lane !== lane;
 
-                  const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
-                  arUI.showJudgement(hit.judgement, scoreRes.points);
-                  arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
+                if (isNewLane) {
+                  fingerLaneState[trackKey] = { lane, hitFired: false };
+                }
 
-                  const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
-                  triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
-                  arScene.triggerHitVFX(laneOrMidi, hit.judgement);
-                  arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
-                  arScene.worldReaction.setCombo(arUI.scoreManager.combo);
+                if (!fingerLaneState[trackKey].hitFired) {
+                  // Check note hit on this lane
+                  const hit = hitDetector.evaluateLaneHit(lane, currentTimeSec, currentChart.notes);
+                  if (hit) {
+                    fingerLaneState[trackKey].hitFired = true;
+                    hit.note.played = true;
+                    hit.note.playedSound = true;
+                    soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
+
+                    const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
+                    arUI.showJudgement(hit.judgement, scoreRes.points);
+                    arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
+
+                    const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
+                    triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
+                    arScene.triggerHitVFX(laneOrMidi, hit.judgement);
+                    arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
+                    arScene.worldReaction.setCombo(arUI.scoreManager.combo);
+                  }
+                }
+              } else {
+                // Finger left the keyboard area — reset its state so re-entry triggers a hit
+                if (fingerLaneState[trackKey]) {
+                  delete fingerLaneState[trackKey];
                 }
               }
             }
