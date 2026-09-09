@@ -64,6 +64,16 @@
         <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano (Tuts piano asli 3D & falling notes Synthesia)">🎹 Real Piano</button>
       </div>
 
+      <!-- Game Mode Select (Auto-Play, Interactive, Stop Chord, Stop All) -->
+      <div class="game-mode-section">
+        <div class="game-mode-tabs" id="arGameModeTabs">
+          <button type="button" class="game-mode-tab active" data-gamemode="play" title="Mode Interaktif: Pukul tuts dengan tangan atau Spacebar">🎮 Interactive</button>
+          <button type="button" class="game-mode-tab" data-gamemode="auto" title="Mode Auto-Play: Lagu & tuts berbunyi otomatis tersinkronisasi">▶️ Auto-Play</button>
+          <button type="button" class="game-mode-tab" data-gamemode="wait_chord" title="Mode Stop Chord: Lagu berhenti di setiap akor sampai ditekan">⏸️ Stop Chord</button>
+          <button type="button" class="game-mode-tab" data-gamemode="wait_all" title="Mode Stop All: Lagu menunggu setiap not ditekan">⏸️ Stop All</button>
+        </div>
+      </div>
+
       <!-- Song Selector -->
       <div class=song-list>
         <div class=song-item selected data-song-id=demo_canon>
@@ -149,8 +159,9 @@
       </div>
 
       <div class=hud-actions>
-        <span id="hud-mode-badge" class="hud-badge-pill">🎮 Tiles</span>
-        <span id="hud-slam-badge" class="hud-badge-pill slam-pill" title="Ayunkan Jempol ke Bawah atau Tekan Space untuk Chord Slam!">⚡ THUMB SLAM [Space]</span>
+        <button id="btn-hud-gamemode" class="hud-badge-pill gamemode-btn" title="Klik untuk ganti mode: Interactive / Auto-Play / Stop Chord / Stop All">🎮 Interactive</button>
+        <button id="hud-mode-badge" class="hud-badge-pill" title="Klik untuk beralih tampilan (Tiles / Real Piano)">🎮 Tiles</button>
+        <button id="hud-slam-badge" class="hud-badge-pill slam-pill" title="Ayunkan Jempol ke Bawah atau Tekan Space untuk Chord Slam!">⚡ THUMB SLAM [Space]</button>
         <button id="btn-hud-mirror" class="icon-btn" title="Toggle Mirror Kamera">🔄</button>
         <button id="btn-hud-direction" class="icon-btn" title="Toggle Arah Alur Tuts (Bawah ⬆ Atas / Atas ⬇ Bawah)">⬆️</button>
         <button id=btn-mute class=icon-btn title=Toggle Sound>🔊</button>

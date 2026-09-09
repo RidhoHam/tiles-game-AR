@@ -54,6 +54,10 @@
     align-items: center;
     gap: 8px;
     flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+    max-width: 100%;
+    pointer-events: auto !important;
   }
   button, .file-btn, select {
     border: 1px solid #30384b;
@@ -68,6 +72,8 @@
     align-items: center;
     gap: 6px;
     transition: all 0.15s ease;
+    pointer-events: auto !important;
+    flex-shrink: 0;
   }
   button:hover:not(:disabled), .file-btn:hover {
     background: #222a3b;
