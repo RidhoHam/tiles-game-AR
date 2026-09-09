@@ -5,6 +5,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     import { SoundEngine } from './audio/soundEngine.js';
     import { parseSongChart, convertTilesJsonToChart } from './engine/songParser.js';
     import { ARUIController, UI_STATES } from './ui/arUI.js';
+    import { FingerInteractionController } from './engine/fingerInteraction.js';
 
     // Application state
     let arScene = null;
@@ -12,6 +13,13 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     let hitDetector = null;
     let soundEngine = null;
     let arUI = null;
+
+    const fingerController = new FingerInteractionController({
+      debounceCooldownSec: 0.075,
+      pressVelocityThreshold: 0.015
+    });
+    let debugHandHitbox = false;
+    let lastHitJudgement = null;
 
     let selectedLanes = 8;
     let currentViewMode = 'tiles'; // 'tiles' | 'roll'
@@ -741,6 +749,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
       songStartTimeSec = performance.now() / 1000;
       isPlaying = true;
+      lastHitJudgement = null;
+      fingerController.reset();
       arUI.stateMachine.transition(UI_STATES.PLAYING);
     }
 
@@ -884,6 +894,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
         arScene.setSpatialCombo(arUI.scoreManager.combo, '⚡ SLAM');
         arScene.worldReaction.setCombo(arUI.scoreManager.combo);
+        lastHitJudgement = 'PERFECT';
 
         // Flash HUD pill
         const slamBadge = document.getElementById('hud-slam-badge');
@@ -894,7 +905,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       }
     }
 
-    // Physical Spacebar for Chord Slam [Space]
+    // Physical Spacebar for Chord Slam [Space] & 'H' for Debug Hitbox
     window.addEventListener('keydown', (e) => {
       if (e.code === 'Space' || e.key === ' ') {
         if (isPlaying) {
@@ -902,6 +913,13 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           const currentTimeSec = (performance.now() / 1000) - songStartTimeSec;
           handleChordSlam(currentTimeSec);
         }
+      } else if (e.key === 'h' || e.key === 'H') {
+        debugHandHitbox = !debugHandHitbox;
+        showArToast(
+          debugHandHitbox ? '🎯 Debug Hitbox: AKTIF' : '🎯 Debug Hitbox: NONAKTIF',
+          debugHandHitbox ? 'info' : 'warning',
+          2500
+        );
       }
     });
 
@@ -1919,8 +1937,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         ctx.restore();
 
         // Detect active lane hover from real hands to illuminate virtual keys under fingers
-        const activeHoverLanes = new Set();
-        if (Array.isArray(hands) && hands.length > 0 && corners) {
+        const activeHoverLanes = fingerController
+          ? fingerController.getHoverLanes()
+          : new Set();
+        if (activeHoverLanes.size === 0 && Array.isArray(hands) && hands.length > 0 && corners) {
           const fingerDefs = [
             { key: 'thumbTip', camKey: 'cameraThumbTip' },
             { key: 'indexTip', camKey: 'cameraIndexTip' },
@@ -1985,20 +2005,20 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
               ctx.shadowBlur = 14 * hp;
             } else if (isHover) {
-              // Real-time hover illumination when camera sees player's finger above key
-              keyGrad.addColorStop(0, 'rgba(224, 242, 254, 0.98)');
+              // Real-time hover illumination when camera sees player's finger above key (cyan/yellow)
+              keyGrad.addColorStop(0, 'rgba(254, 240, 138, 0.96)');
               keyGrad.addColorStop(0.5, 'rgba(186, 230, 253, 0.92)');
-              keyGrad.addColorStop(1, 'rgba(56, 189, 248, 0.45)');
-              ctx.shadowColor = '#38bdf8';
-              ctx.shadowBlur = 12;
+              keyGrad.addColorStop(1, 'rgba(6, 182, 212, 0.55)');
+              ctx.shadowColor = '#06b6d4';
+              ctx.shadowBlur = 14;
             } else {
               keyGrad.addColorStop(0, 'rgba(255, 255, 255, 0.88)');
               keyGrad.addColorStop(0.8, 'rgba(241, 245, 249, 0.82)');
               keyGrad.addColorStop(1, 'rgba(203, 213, 225, 0.76)');
             }
             ctx.fillStyle = keyGrad;
-            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#facc15' : '#38bdf8') : (isHover ? '#38bdf8' : '#475569');
-            ctx.lineWidth = hitAnim ? 2.2 : (isHover ? 2.0 : 1.2);
+            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#facc15' : '#38bdf8') : (isHover ? '#06b6d4' : '#475569');
+            ctx.lineWidth = hitAnim ? 2.2 : (isHover ? 2.2 : 1.2);
             ctx.beginPath();
             ctx.moveTo(kwBaseL.x, kwBaseL.y);
             ctx.lineTo(kwBaseR.x, kwBaseR.y);
@@ -2047,11 +2067,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 ctx.shadowBlur = 14 * (1 - hitAnim.progress);
                 ctx.lineWidth = 2.0;
               } else if (isHover) {
-                ctx.fillStyle = '#0f172a';
-                ctx.strokeStyle = '#38bdf8';
-                ctx.shadowColor = '#38bdf8';
-                ctx.shadowBlur = 12;
-                ctx.lineWidth = 1.8;
+                ctx.fillStyle = '#0e2338';
+                ctx.strokeStyle = '#06b6d4';
+                ctx.shadowColor = '#06b6d4';
+                ctx.shadowBlur = 14;
+                ctx.lineWidth = 2.0;
               } else {
                 ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
                 ctx.strokeStyle = '#64748b';
@@ -2103,11 +2123,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
               ctx.shadowBlur = 16 * hp;
             } else if (isHover) {
-              padGrad.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
-              padGrad.addColorStop(0.5, 'rgba(14, 165, 233, 0.35)');
+              padGrad.addColorStop(0, 'rgba(6, 182, 212, 0.55)');
+              padGrad.addColorStop(0.5, 'rgba(250, 204, 21, 0.45)');
               padGrad.addColorStop(1, 'rgba(2, 6, 23, 0.74)');
-              ctx.shadowColor = '#38bdf8';
-              ctx.shadowBlur = 14;
+              ctx.shadowColor = '#06b6d4';
+              ctx.shadowBlur = 16;
             } else {
               padGrad.addColorStop(0, 'rgba(30, 41, 59, 0.62)');
               padGrad.addColorStop(0.4, 'rgba(15, 23, 42, 0.68)');
@@ -2117,8 +2137,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             }
 
             ctx.fillStyle = padGrad;
-            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#fde047' : '#38bdf8') : (isHover ? '#38bdf8' : '#f8fafc');
-            ctx.lineWidth = hitAnim ? 3.2 : (isHover ? 2.5 : 2);
+            ctx.strokeStyle = hitAnim ? (hitAnim.isChord ? '#fde047' : '#38bdf8') : (isHover ? '#06b6d4' : '#f8fafc');
+            ctx.lineWidth = hitAnim ? 3.2 : (isHover ? 2.8 : 2);
             ctx.beginPath();
             ctx.moveTo(pBaseL.x, pBaseL.y);
             ctx.lineTo(pBaseR.x, pBaseR.y);
@@ -2288,6 +2308,148 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
               ctx.restore();
             }
           }
+        }
+
+        // 2f. Screen-Space Dynamic Piano Hitbox Debug Overlay
+        if (debugHandHitbox) {
+          const numHitboxLanes = (viewMode === 'roll') ? 14 : numLanes;
+          const activeFingers = fingerController ? fingerController.getFingerStates(true) : [];
+          const hoverLanes = fingerController ? fingerController.getHoverLanes() : new Set();
+
+          const pressingLanes = new Set();
+          for (const f of activeFingers) {
+            if ((f.state === 'PRESSING' || f.state === 'TRIGGERED') && f.lane >= 0) {
+              pressingLanes.add(f.lane);
+            }
+          }
+
+          // 1. Render stationary piano lane hitboxes [ HB0 ][ HB1 ]... with color coding
+          // (blue for idle, yellow for hover, cyan for press)
+          ctx.save();
+          for (let l = 0; l < numHitboxLanes; l++) {
+            const u0 = l / numHitboxLanes;
+            const u1 = (l + 1) / numHitboxLanes;
+
+            const hbTL = getPerspectivePoint(u0, 0.0);
+            const hbTR = getPerspectivePoint(u1, 0.0);
+            const hbBR = getPerspectivePoint(u1, 1.0);
+            const hbBL = getPerspectivePoint(u0, 1.0);
+
+            const isPress = pressingLanes.has(l);
+            const isHov = hoverLanes.has(l);
+
+            let strokeColor, fillColor, labelColor;
+            if (isPress) {
+              strokeColor = '#06b6d4'; // Cyan for press
+              fillColor = 'rgba(6, 182, 212, 0.35)';
+              labelColor = '#22d3ee';
+            } else if (isHov) {
+              strokeColor = '#facc15'; // Yellow for hover
+              fillColor = 'rgba(250, 204, 21, 0.28)';
+              labelColor = '#fde047';
+            } else {
+              strokeColor = '#3b82f6'; // Blue for idle
+              fillColor = 'rgba(59, 130, 246, 0.12)';
+              labelColor = '#60a5fa';
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(hbTL.x, hbTL.y);
+            ctx.lineTo(hbTR.x, hbTR.y);
+            ctx.lineTo(hbBR.x, hbBR.y);
+            ctx.lineTo(hbBL.x, hbBL.y);
+            ctx.closePath();
+
+            ctx.fillStyle = fillColor;
+            ctx.fill();
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = isPress ? 3.0 : (isHov ? 2.5 : 1.5);
+            ctx.shadowColor = strokeColor;
+            ctx.shadowBlur = isPress ? 12 : (isHov ? 8 : 4);
+            ctx.stroke();
+
+            // Hitbox label [ HB0 ], [ HB1 ] ...
+            const hbMidX = (hbTL.x + hbTR.x + hbBR.x + hbBL.x) / 4;
+            const hbMidY = (hbTL.y + hbTR.y + hbBR.y + hbBL.y) / 4;
+            ctx.shadowBlur = 0;
+            ctx.font = 'bold 11px monospace';
+            ctx.fillStyle = labelColor;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`[ HB${l} ]`, hbMidX, hbMidY);
+          }
+          ctx.restore();
+
+          // 2. Draw small semi-transparent debug status card
+          // Showing: Hand, Finger, Lane, State ('HOVER'/'PRESSING'), VelocityY, and last judgement
+          ctx.save();
+          const cardX = 20;
+          const cardY = 110;
+          const cardW = 270;
+          const cardH = activeFingers.length > 0 ? Math.min(270, 50 + activeFingers.length * 40) : 92;
+
+          ctx.fillStyle = 'rgba(11, 15, 25, 0.90)';
+          ctx.strokeStyle = '#06b6d4';
+          ctx.lineWidth = 1.5;
+          ctx.shadowColor = '#06b6d4';
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(cardX, cardY, cardW, cardH, 8);
+          else ctx.rect(cardX, cardY, cardW, cardH);
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.shadowBlur = 0;
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'top';
+
+          ctx.font = 'bold 11px "Outfit", sans-serif';
+          ctx.fillStyle = '#38bdf8';
+          ctx.fillText('🎯 HITBOX DEBUG [H]', cardX + 12, cardY + 10);
+
+          ctx.font = '10px monospace';
+          ctx.fillStyle = '#94a3b8';
+          ctx.fillText('Last Judgement: ', cardX + 12, cardY + 28);
+          const judgeColor = lastHitJudgement === 'PERFECT' ? '#22c55e' : (lastHitJudgement === 'GOOD' ? '#facc15' : (lastHitJudgement === 'MISS' ? '#ef4444' : '#e2e8f0'));
+          ctx.fillStyle = judgeColor;
+          ctx.fillText(lastHitJudgement || 'NONE', cardX + 115, cardY + 28);
+
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(cardX + 10, cardY + 44);
+          ctx.lineTo(cardX + cardW - 10, cardY + 44);
+          ctx.stroke();
+
+          if (activeFingers.length === 0) {
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px monospace';
+            ctx.fillText('Hand: - | Finger: -', cardX + 12, cardY + 52);
+            ctx.fillText('Lane: - | State: IDLE | vY: 0.000', cardX + 12, cardY + 68);
+          } else {
+            let rowY = cardY + 50;
+            for (let i = 0; i < Math.min(5, activeFingers.length); i++) {
+              const f = activeFingers[i];
+              const isPress = f.state === 'PRESSING' || f.state === 'TRIGGERED';
+              const stateColor = isPress ? '#06b6d4' : (f.state === 'HOVER' ? '#facc15' : (f.state === 'RELEASE' ? '#a855f7' : '#94a3b8'));
+
+              ctx.font = 'bold 10px monospace';
+              ctx.fillStyle = '#f8fafc';
+              ctx.fillText(`${f.hand} ${f.finger}:`, cardX + 12, rowY);
+
+              ctx.fillStyle = stateColor;
+              ctx.fillText(`${f.state}`, cardX + 120, rowY);
+
+              const laneStr = f.lane >= 0 ? `L${f.lane}` : 'OUT';
+              ctx.fillStyle = '#94a3b8';
+              ctx.font = '10px monospace';
+              const velYStr = (f.velocityY >= 0 ? '+' : '') + f.velocityY.toFixed(3);
+              ctx.fillText(`Lane: ${laneStr} | vY: ${velYStr}`, cardX + 12, rowY + 16);
+
+              rowY += 36;
+            }
+          }
+          ctx.restore();
         }
       }
     }
@@ -2518,7 +2680,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
           }
         }
 
-        // In Playing state, evaluate hand crossings & finger lane taps for all 10 fingers & thumb chord slam
+        // In Playing state, evaluate hand interaction & finger lane presses
         if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
           const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
 
@@ -2530,73 +2692,39 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 handleChordSlam(currentTimeSec);
               }
             }
+          }
 
-            // Check all 5 fingers for lane positioning & note taps
-            const fingerKeys = [
-              { tipKey: 'indexTip', camKey: 'cameraIndexTip' },
-              { tipKey: 'middleTip', camKey: 'cameraMiddleTip' },
-              { tipKey: 'ringTip', camKey: 'cameraRingTip' },
-              { tipKey: 'pinkyTip', camKey: 'cameraPinkyTip' },
-              { tipKey: 'thumbTip', camKey: 'cameraThumbTip' }
-            ];
+          // Screen-Space Dynamic Piano Hitbox System: Update finger tracking & detect presses
+          const pressEvents = fingerController.update(
+            cachedHands,
+            persistedCanvasCorners,
+            arScene.viewMode === 'roll' ? 14 : selectedLanes,
+            currentTimeSec
+          );
 
-            for (const f of fingerKeys) {
-              const tip = h[f.tipKey];
-              const camTip = h[f.camKey];
-              if (!tip && !camTip) continue;
+          if (currentGameMode !== 'auto') {
+            for (const press of pressEvents) {
+              // Trigger visual key depress on the active lane
+              arScene.triggerKeyDepress(press.lane);
 
-              const screenPt = getScreenPoint(camTip, tip);
-              const trackKey = `${h.handedness}_${f.tipKey}`;
-              if (tip) {
-                lastHandPositions[trackKey] = { ...tip };
-              }
+              // Evaluate hit using the new screen-space dynamic hitbox API
+              const hit = hitDetector.evaluateLanePress(press.lane, currentTimeSec, currentChart.notes);
+              if (hit) {
+                hit.note.played = true;
+                hit.note.playedSound = true;
+                soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
 
-              // Map fingertip to desk canvas lane (2D perspective quad mapping with 3D fallback)
-              let lane = -1;
-              if (screenPt && persistedCanvasCorners) {
-                lane = getLaneFromScreenPoint(screenPt, persistedCanvasCorners, selectedLanes);
-              }
-              if (lane === -1 && tip) {
-                lane = hitDetector.mapHandToLane(tip, selectedLanes, arScene.arenaWidth);
-              }
+                const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
+                arUI.showJudgement(hit.judgement, scoreRes.points);
+                arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
 
-              if (lane >= 0) {
-                // Trigger visual key depress on the active lane (always, for visual feedback)
-                arScene.triggerKeyDepress(lane);
+                const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
+                triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
+                arScene.triggerHitVFX(laneOrMidi, hit.judgement);
+                arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
+                arScene.worldReaction.setCombo(arUI.scoreManager.combo);
 
-                // Per-finger debounce: only trigger hit when finger ENTERS a new lane
-                const prevState = fingerLaneState[trackKey];
-                const isNewLane = !prevState || prevState.lane !== lane;
-
-                if (isNewLane) {
-                  fingerLaneState[trackKey] = { lane, hitFired: false };
-                }
-
-                if (!fingerLaneState[trackKey].hitFired) {
-                  // Check note hit on this lane
-                  const hit = hitDetector.evaluateLaneHit(lane, currentTimeSec, currentChart.notes);
-                  if (hit) {
-                    fingerLaneState[trackKey].hitFired = true;
-                    hit.note.played = true;
-                    hit.note.playedSound = true;
-                    soundEngine.playNote(hit.note.note || hit.note.midi, hit.note.durationSec || 0.35);
-
-                    const scoreRes = arUI.scoreManager.recordHit(hit.judgement);
-                    arUI.showJudgement(hit.judgement, scoreRes.points);
-                    arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
-
-                    const laneOrMidi = (arScene.viewMode === 'roll' && hit.note.midi) ? hit.note.midi : hit.lane;
-                    triggerKeyHitAnimation(laneOrMidi, hit.judgement, Boolean(hit.note.type === 'chord' || hit.note.isChord));
-                    arScene.triggerHitVFX(laneOrMidi, hit.judgement);
-                    arScene.setSpatialCombo(arUI.scoreManager.combo, hit.judgement);
-                    arScene.worldReaction.setCombo(arUI.scoreManager.combo);
-                  }
-                }
-              } else {
-                // Finger left the keyboard area — reset its state so re-entry triggers a hit
-                if (fingerLaneState[trackKey]) {
-                  delete fingerLaneState[trackKey];
-                }
+                lastHitJudgement = hit.judgement;
               }
             }
           }
@@ -2652,6 +2780,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                   arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
                   arScene.setSpatialCombo(arUI.scoreManager.combo, 'PERFECT');
                   arScene.worldReaction.setCombo(arUI.scoreManager.combo);
+                  lastHitJudgement = 'PERFECT';
                 }
               }
             }
@@ -2684,6 +2813,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
                 arScene.setSpatialCombo(0, 'MISS');
                 arScene.worldReaction.setCombo(0);
+                lastHitJudgement = 'MISS';
               }
             }
           }
