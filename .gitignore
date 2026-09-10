@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local reference and slide artifacts
+PB7MAT+TIH03_Minggu_07.pdf
+*.bento.html

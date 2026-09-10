@@ -3,262 +3,292 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <title>AR Piano Tiles — Play the Song in Space</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>✨</text></svg>">
+  <title>AR Piano Tiles — Minimal Studio AR</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'><path d='M9 18V5l12-2v13'/><circle cx='6' cy='18' r='3'/><circle cx='18' cy='16' r='3'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/ar.css">
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
   <!-- Three.js 3D Viewport Container -->
-  <div id=ar-container></div>
+  <div id="ar-container"></div>
 
   <!-- 2D Spatial Gesture Overlay Canvas for Holographic Table Grid & Pinch Animation -->
-  <canvas id=gesture-canvas></canvas>
+  <canvas id="gesture-canvas"></canvas>
 
   <!-- Live Performance & Hand Status Badge -->
-  <div id=perf-badge>
-    <span id=fps-badge-dot></span>
-    <span id=fps-display>60 FPS</span>
-    <span style=opacity: 0.35;>|</span>
-    <span id=hands-display>🖐️ 0 Tangan</span>
+  <div id="perf-badge" class="perf-pill">
+    <span id="fps-badge-dot"></span>
+    <span id="fps-display">60 FPS</span>
+    <span class="perf-sep">·</span>
+    <span id="hands-display">0 Hands</span>
   </div>
 
   <!-- Surface Scan / Placement Banner -->
-  <div id=scan-banner class=glass-card>
-    <h2>🖐️ Letakkan 2 Tangan di Meja untuk Atur Kanvas Piano</h2>
-    <p id=scan-instructions>
-      Rentangkan 2 tangan di meja untuk menyesuaikan kanvas, atau cubit 1 sudut untuk fine-tuning. Tahan tangan diam 3 detik untuk Kunci, atau klik tombol di bawah.
+  <div id="scan-banner" class="spatial-card scan-panel">
+    <h2>Align Virtual Piano on Surface</h2>
+    <p id="scan-instructions">
+      Place hands on table to position the canvas. Hold still for 3 seconds or click Lock.
     </p>
-    <div style="display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; justify-content: center;">
-      <button id="btn-place-arena" class="action-btn">
-        <span>🔒 Kunci Posisi Meja</span>
+    <div class="scan-actions">
+      <button id="btn-place-arena" class="action-btn primary">
+        <i data-lucide="lock"></i>
+        <span>Lock Surface</span>
       </button>
       <button id="btn-skip-placement" class="action-btn secondary">
-        <span>Gunakan Posisi Standar</span>
+        <i data-lucide="crosshair"></i>
+        <span>Default</span>
       </button>
-      <button id="btn-scan-mirror" class="action-btn secondary" title="Balik Tampilan Kamera (Cermin)">
-        <span>🔄 Cermin: ON</span>
+      <button id="btn-scan-mirror" class="action-btn secondary" title="Toggle Camera Mirror">
+        <i data-lucide="flip-horizontal"></i>
+        <span>Mirror</span>
       </button>
-      <button id="btn-scan-direction" class="action-btn secondary" title="Balik Arah Alur Tuts Jatuh">
-        <span id="scan-direction-text">⬇️ Alur: Atas ke Bawah</span>
+      <button id="btn-scan-direction" class="action-btn secondary" title="Toggle Note Flow Direction">
+        <i data-lucide="arrow-down"></i>
+        <span id="scan-direction-text">Flow: Top to Bottom</span>
       </button>
-      <a href="index.html" class="action-btn secondary" style="text-decoration: none; padding: 10px 14px;" title="Kembali ke Mode 2D">
-        <span>🎮 2D Mode</span>
-      </a>
+      <button id="btn-reset-corners" class="action-btn secondary" title="Reset Canvas Corners to Center">
+        <i data-lucide="rotate-ccw"></i>
+        <span>Reset</span>
+      </button>
     </div>
   </div>
 
   <!-- Song & Mode Select Modal -->
-  <div id=song-modal class=modal-backdrop>
-    <div class=modal-box glass-card>
-      <div class=modal-header>
-        <h3 class=modal-title>AR Piano Arena</h3>
-        <span class=modal-badge>Web AR 3D</span>
+  <div id="song-modal" class="modal-backdrop">
+    <div class="modal-box spatial-card">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <i data-lucide="glasses"></i>
+          <h3 class="modal-title">Spatial Arena Setup</h3>
+        </div>
+        <span class="modal-badge">WebXR / Vision</span>
       </div>
 
-      <!-- Dual Mode Switcher Tabs (Mirroring 2D Player: Tiles vs Real Piano) -->
+      <!-- Dual Mode Switcher Tabs -->
       <div class="view-mode-tabs" id="viewModeTabs">
-        <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Piano Tiles (Rhythm lanes falling to hit line)">🎮 Tiles</button>
-        <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano (Tuts piano asli 3D & falling notes Synthesia)">🎹 Real Piano</button>
+        <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Rhythm Lanes">Tiles</button>
+        <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Real 3D Piano">Real Piano</button>
       </div>
 
-      <!-- Game Mode Select (Auto-Play, Interactive, Stop Chord, Stop All) -->
+      <!-- Game Mode Select -->
       <div class="game-mode-section">
         <div class="game-mode-tabs" id="arGameModeTabs">
-          <button type="button" class="game-mode-tab active" data-gamemode="play" title="Mode Interaktif: Pukul tuts dengan tangan atau Spacebar">🎮 Interactive</button>
-          <button type="button" class="game-mode-tab" data-gamemode="auto" title="Mode Auto-Play: Lagu & tuts berbunyi otomatis tersinkronisasi">▶️ Auto-Play</button>
-          <button type="button" class="game-mode-tab" data-gamemode="wait_chord" title="Mode Stop Chord: Lagu berhenti di setiap akor sampai ditekan">⏸️ Stop Chord</button>
-          <button type="button" class="game-mode-tab" data-gamemode="wait_all" title="Mode Stop All: Lagu menunggu setiap not ditekan">⏸️ Stop All</button>
+          <button type="button" class="game-mode-tab active" data-gamemode="play">Interactive</button>
+          <button type="button" class="game-mode-tab" data-gamemode="auto">Auto-Play</button>
+          <button type="button" class="game-mode-tab" data-gamemode="wait_chord">Stop Chord</button>
+          <button type="button" class="game-mode-tab" data-gamemode="wait_all">Stop All</button>
         </div>
       </div>
 
       <!-- Finger Tracking Mode (2-Finger vs 10-Finger) -->
-      <div class="game-mode-section" style="margin-top: 4px;">
+      <div class="game-mode-section">
         <div class="game-mode-tabs" id="arFingerModeTabs">
-          <button type="button" class="game-mode-tab active" id="btn-finger-2" title="Mode 2 Jari: 1 jari per tangan (telunjuk). Aman dari salah sentuh jari samping.">✌️ 2 Jari (1/Tangan)</button>
-          <button type="button" class="game-mode-tab" id="btn-finger-all" title="Mode Semua Jari: 10 jari aktif (Jempol, Telunjuk, Tengah, Manis, Kelingking).">🖐️ Semua Jari (10 Jari)</button>
+          <button type="button" class="game-mode-tab active" id="btn-finger-2">2 Fingers (Index)</button>
+          <button type="button" class="game-mode-tab" id="btn-finger-all">All Fingers (10-Key)</button>
         </div>
       </div>
 
       <!-- Song Selector -->
-      <div class=song-list>
-        <div class=song-item selected data-song-id=demo_canon>
-          <div class=song-item-info>
+      <div class="song-list">
+        <div class="song-item selected" data-song-id="demo_canon">
+          <div class="song-item-info">
             <h4>Canon in D</h4>
-            <p>Johann Pachelbel • 100 BPM • Classical</p>
+            <p>Johann Pachelbel · 100 BPM · Classical</p>
           </div>
-          <span class=song-item-tag>Built-in</span>
+          <span class="song-item-tag">Preset</span>
         </div>
 
-        <div class=song-item data-song-id=demo_twinkle>
-          <div class=song-item-info>
+        <div class="song-item" data-song-id="demo_twinkle">
+          <div class="song-item-info">
             <h4>Twinkle Twinkle Little Star</h4>
-            <p>Traditional • 100 BPM • Easy Chords</p>
+            <p>Traditional · 100 BPM · Easy Chords</p>
           </div>
-          <span class=song-item-tag>Built-in</span>
+          <span class="song-item-tag">Preset</span>
         </div>
       </div>
 
       <!-- File Import Section -->
-      <label class=action-btn secondary style=justify-content: center; width: 100%;>
-        <span>📂 Import JSON / MIDI File</span>
-        <input type=file id=song-file-input accept=.json,.mid,.midi style=display: none; />
+      <label class="action-btn secondary file-import-label">
+        <i data-lucide="folder-open"></i>
+        <span>Import MIDI / JSON File</span>
+        <input type="file" id="song-file-input" accept=".json,.mid,.midi" style="display: none;" />
       </label>
 
       <!-- Navigation & Start -->
-      <div style=display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap;>
-        <button id=btn-direct-play class=action-btn style=width: 100%; justify-content: center; font-size: 15px; background: linear-gradient(135deg, #059669, #10b981); box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);>
-          ▶️ Mulai Main Sekarang (Play Now)
+      <div class="modal-footer-actions">
+        <button id="btn-direct-play" class="action-btn primary full-width">
+          <i data-lucide="play"></i>
+          <span>Start Session</span>
         </button>
-        <button id=btn-start-calibration class=action-btn secondary style=flex: 1; justify-content: center; font-size: 12px;>
-          Kalibrasi Tangan
-        </button>
-        <a href=index.html class=action-btn secondary id=btn-back-2d style=flex: 1; text-decoration: none; justify-content: center; font-size: 12px;>
-          🎮 Mode 2D
-        </a>
+        <div class="footer-sub-actions">
+          <button id="btn-start-calibration" class="action-btn secondary flex-1">
+            <i data-lucide="target"></i>
+            <span>Calibration</span>
+          </button>
+          <button id="btn-recanvas-setup" class="action-btn secondary flex-1" title="Re-Canvas Table / Desk Surface">
+            <i data-lucide="scan"></i>
+            <span>Re-Canvas</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Calibration Guide Modal -->
-  <div id=calib-modal class=modal-backdrop hidden>
-    <div class=modal-box glass-card style=text-align: center;>
-      <h3 class=modal-title>Hand Reach Calibration</h3>
-      <p style=font-size: 13px; color: var(--text-muted);>
-        Raise your hand in front of camera to auto-calibrate comfortable lane spacing and depth.
+  <div id="calib-modal" class="modal-backdrop hidden">
+    <div class="modal-box spatial-card text-center">
+      <h3 class="modal-title">Hand Reach Calibration</h3>
+      <p class="calib-desc">
+        Hold hand steady in front of camera to calibrate comfortable lane boundaries.
       </p>
 
-      <div class=calib-guide-box>
-        <div class=calib-hand-icon>?</div>
-        <p id=calib-status-text style=font-size: 12px; color: #38bdf8; font-weight: 600;>
+      <div class="calib-guide-box">
+        <div class="calib-hand-icon">
+          <i data-lucide="hand"></i>
+        </div>
+        <p id="calib-status-text" class="calib-status">
           Hold hand steady inside frame... (0%)
         </p>
       </div>
 
-      <div style=display: flex; gap: 8px;>
-        <button id=btn-skip-calib class=action-btn secondary style=flex: 1; justify-content: center;>
+      <div class="calib-actions">
+        <button id="btn-skip-calib" class="action-btn secondary flex-1">
           Skip
         </button>
-        <button id=btn-confirm-calib class=action-btn style=flex: 1; justify-content: center;>
-          Confirm & Play
+        <button id="btn-confirm-calib" class="action-btn primary flex-1">
+          Confirm
         </button>
       </div>
     </div>
   </div>
 
   <!-- Gameplay HUD Layer -->
-  <div id=hud-layer class=hidden>
-    <div class=hud-top-bar>
-      <div class=hud-score-card glass-card>
-        <span class=hud-label>Score</span>
-        <span id=hud-score class=hud-score-value>0</span>
+  <div id="hud-layer" class="hidden">
+    <!-- Minimalist Spatial Dynamic Top Bar -->
+    <div class="hud-top-bar">
+      <div class="hud-stat-pill spatial-card">
+        <span class="hud-label">SCORE</span>
+        <span id="hud-score" class="hud-val">0</span>
+        <span class="hud-sep">·</span>
+        <span class="hud-label">ACC</span>
+        <span id="hud-accuracy" class="hud-val">100.0%</span>
       </div>
 
-      <div class=hud-timeline-container glass-card style=padding: 8px 14px;>
-        <div class=timeline-info>
-          <span id=hud-song-title>Canon in D</span>
-          <span id=time-elapsed>0:00 / 0:00</span>
+      <div class="hud-timeline-pill spatial-card">
+        <div class="timeline-info">
+          <span id="hud-song-title">Canon in D</span>
+          <span id="time-elapsed" class="mono-time">0:00 / 0:00</span>
         </div>
-        <div class=timeline-bar>
-          <div id=timeline-progress class=timeline-fill></div>
+        <div class="timeline-bar">
+          <div id="timeline-progress" class="timeline-fill"></div>
         </div>
       </div>
 
-      <div class=hud-actions>
-        <button id="btn-hud-gamemode" class="hud-badge-pill gamemode-btn" title="Klik untuk ganti mode: Interactive / Auto-Play / Stop Chord / Stop All">🎮 Interactive</button>
-        <button id="btn-hud-fingers" class="hud-badge-pill" title="Toggle Mode Jari: 2 Jari (1/tangan) vs Semua Jari (10 Jari) [F]">✌️ 2 Jari [F]</button>
-        <button id="hud-mode-badge" class="hud-badge-pill" title="Klik untuk beralih tampilan (Tiles / Real Piano)">🎮 Tiles</button>
-        <button id="hud-slam-badge" class="hud-badge-pill slam-pill" title="Ayunkan Jempol ke Bawah atau Tekan Space untuk Chord Slam!">⚡ THUMB SLAM [Space]</button>
-        <button id="btn-hud-mirror" class="icon-btn" title="Toggle Mirror Kamera">🔄</button>
-        <button id="btn-hud-direction" class="icon-btn" title="Toggle Arah Alur Tuts (Atas ⬇ Bawah / Bawah ⬆ Atas)">⬇️</button>
-        <button id=btn-mute class=icon-btn title=Toggle Sound>🔊</button>
-        <button id=btn-exit class=icon-btn title=Exit to Menu>✕</button>
+      <div class="hud-actions">
+        <button id="btn-recanvas" class="hud-pill-btn" title="Re-Canvas Surface Area">
+          <i data-lucide="scan"></i>
+          <span>Re-Canvas</span>
+        </button>
+        <button id="btn-hud-gamemode" class="hud-pill-btn" title="Game Mode">Interactive</button>
+        <button id="btn-hud-fingers" class="hud-pill-btn" title="Finger Mode [F]">2 Fingers [F]</button>
+        <button id="hud-mode-badge" class="hud-pill-btn" title="View Mode">Tiles</button>
+        <button id="hud-slam-badge" class="hud-pill-btn" title="Chord Slam [Space]">
+          <i data-lucide="zap"></i>
+          <span>Slam</span>
+        </button>
+        <button id="btn-hud-mirror" class="hud-icon-btn" title="Mirror Camera">
+          <i data-lucide="flip-horizontal"></i>
+        </button>
+        <button id="btn-hud-direction" class="hud-icon-btn" title="Flow Direction">
+          <i data-lucide="arrow-down"></i>
+        </button>
+        <button id="btn-mute" class="hud-icon-btn" title="Toggle Audio">
+          <i data-lucide="volume-2"></i>
+        </button>
+        <button id="btn-exit" class="hud-icon-btn" title="Exit to Menu">
+          <i data-lucide="x"></i>
+        </button>
       </div>
     </div>
 
     <!-- Center Combo Display -->
-    <div id=hud-combo-container class=hidden>
-      <div id=hud-combo>0</div>
-      <div class=combo-sub>Combo</div>
-    </div>
-
-    <!-- Bottom Accuracy Pill -->
-    <div style=align-self: center; margin-bottom: 12px;>
-      <div class=glass-card style=padding: 6px 14px; font-size: 12px; font-weight: 700;>
-        Accuracy: <span id=hud-accuracy style=color: #38bdf8;>100.0%</span>
-      </div>
+    <div id="hud-combo-container" class="hidden">
+      <div id="hud-combo">0</div>
+      <div class="combo-sub">COMBO</div>
     </div>
   </div>
 
   <!-- Floating Judgement Badges Container -->
-  <div id=judgement-layer></div>
+  <div id="judgement-layer"></div>
 
   <!-- Countdown Overlay -->
-  <div id=countdown-overlay class=hidden>
-    <div id=countdown-number class=countdown-num>3</div>
+  <div id="countdown-overlay" class="hidden">
+    <div id="countdown-number" class="countdown-num">3</div>
   </div>
 
   <!-- Result Modal -->
-  <div id=result-modal class=modal-backdrop hidden>
-    <div class=modal-box glass-card style=text-align: center;>
-      <div id=result-rank class=result-rank-circle>A</div>
-      <h3 class=modal-title style=margin-top: 4px;>Performance Summary</h3>
+  <div id="result-modal" class="modal-backdrop hidden">
+    <div class="modal-box spatial-card text-center">
+      <div id="result-rank" class="result-rank-circle">A</div>
+      <h3 class="modal-title" style="margin-top: 8px;">Session Summary</h3>
 
-      <div id=result-punchline class=punchline-banner>
-        You built 95% of the song in space!
+      <div id="result-punchline" class="punchline-text">
+        Accuracy rating achieved in space
       </div>
 
-      <div class=stats-grid>
-        <div class=stat-card>
-          <span class=hud-label>Final Score</span>
-          <span id=result-score class=val>94,200</span>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <span class="hud-label">Final Score</span>
+          <span id="result-score" class="stat-val">0</span>
         </div>
-        <div class=stat-card>
-          <span class=hud-label>Accuracy</span>
-          <span id=result-accuracy class=val>95.0%</span>
+        <div class="stat-card">
+          <span class="hud-label">Accuracy</span>
+          <span id="result-accuracy" class="stat-val">0.0%</span>
         </div>
-        <div class=stat-card>
-          <span class=hud-label>Max Combo</span>
-          <span id=result-max-combo class=val>48</span>
+        <div class="stat-card">
+          <span class="hud-label">Max Combo</span>
+          <span id="result-max-combo" class="stat-val">0</span>
         </div>
-        <div class=stat-card>
-          <span class=hud-label>Chord Acc</span>
-          <span id=result-chord-accuracy class=val>100%</span>
+        <div class="stat-card">
+          <span class="hud-label">Chord Acc</span>
+          <span id="result-chord-accuracy" class="stat-val">100%</span>
         </div>
-        <div class=stat-card>
-          <span class=hud-label>Perfect</span>
-          <span id=result-perfect class=val style=color: #facc15;>42</span>
+        <div class="stat-card">
+          <span class="hud-label">Perfect</span>
+          <span id="result-perfect" class="stat-val">0</span>
         </div>
-        <div class=stat-card>
-          <span class=hud-label>Good / Miss</span>
-          <span class=val>
-            <span id=result-good style=color: #38bdf8;>6</span> /
-            <span id=result-miss style=color: #ef4444;>2</span>
+        <div class="stat-card">
+          <span class="hud-label">Good / Miss</span>
+          <span class="stat-val">
+            <span id="result-good">0</span> /
+            <span id="result-miss">0</span>
           </span>
         </div>
       </div>
 
-      <div style=display: flex; gap: 8px; margin-top: 6px;>
-        <button id=btn-result-songs class=action-btn secondary style=flex: 1; justify-content: center;>
-          Select Song
+      <div class="result-actions">
+        <button id="btn-result-songs" class="action-btn secondary flex-1">
+          Songs
         </button>
-        <button id=btn-result-replay class=action-btn style=flex: 2; justify-content: center;>
-          Play Again ?
+        <button id="btn-result-replay" class="action-btn primary flex-2">
+          Play Again
         </button>
       </div>
-      <a href=index.html class=action-btn secondary style=text-decoration: none; justify-content: center; width: 100%; margin-top: 4px;>
-        ? Back to 2D Mode
-      </a>
+      <button id="btn-result-recanvas" class="action-btn secondary full-width" style="margin-top: 6px;">
+        <i data-lucide="scan"></i>
+        <span>Re-Canvas Surface Area</span>
+      </button>
     </div>
   </div>
 
-  <!-- Custom In-Game Glass Toast Notification (Replaces Browser native alert) -->
+  <!-- Custom In-Game Toast Notification -->
   <div id="ar-toast" class="ar-toast hidden"></div>
 
   <!-- Tone.js MIDI Library for full-spec SMF parsing in AR -->
   <script src="https://cdn.jsdelivr.net/npm/@tonejs/midi@2.0.28/build/Midi.js"></script>
-  <script type=module src=/src/ar-main.js></script>
+  <script type="module" src="/src/ar-main.js"></script>
 </body>
 </html>

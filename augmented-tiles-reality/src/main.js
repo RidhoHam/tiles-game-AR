@@ -1,3 +1,5 @@
+import { SettingsDialogComponent } from './ui/components/settingsDialog.js';
+
 (() => {
   // DOM Elements
   const fileInput = document.getElementById('midiFile');
@@ -40,6 +42,12 @@
   const tileWidthControlGroup = document.getElementById('tileWidthControlGroup');
   const pianoRangeControlGroup = document.getElementById('pianoRangeControlGroup');
   const pianoRangeSelect = document.getElementById('pianoRangeSelect');
+
+  // Studio Settings Modal
+  const settingsDialog = new SettingsDialogComponent();
+  const settingsModal = settingsDialog.modalEl;
+  const openSettingsBtn = settingsDialog.openBtn;
+  const closeSettingsBtn = settingsDialog.closeBtn;
 
   // Note Helpers
   const NOTE_NAMES_ALL = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -2073,8 +2081,8 @@
         if (currentTime >= duration) {
           currentTime = duration;
           playing = false;
-          playBtn.textContent = '▶ Play';
-          setStatus('Lagu selesai! Klik ↺ Reset untuk mengulang.');
+          updatePlayBtnUI(false);
+          setStatus('Song completed. Press Reset to replay.');
         }
       }
     }
@@ -2087,6 +2095,14 @@
 
     draw();
     requestAnimationFrame(loop);
+  }
+
+  function updatePlayBtnUI(isPlaying) {
+    if (!playBtn) return;
+    playBtn.innerHTML = isPlaying
+      ? '<i data-lucide="pause"></i><span>Pause</span>'
+      : '<i data-lucide="play"></i><span>Play</span>';
+    if (window.lucide) window.lucide.createIcons();
   }
 
   timeline.addEventListener('click', e => {
@@ -2135,8 +2151,8 @@
       playStartTime = performance.now();
       playStartOffset = currentTime;
     }
-    playBtn.textContent = playing ? '⏸ Pause' : '▶ Play';
-    setStatus(playing ? 'Memutar preview tile…' : 'Jeda (Paused)');
+    updatePlayBtnUI(playing);
+    setStatus(playing ? 'Playing tiles…' : 'Paused');
   });
 
   resetBtn.addEventListener('click', () => {
@@ -2145,16 +2161,16 @@
     isWaitingHit = false;
     waitingNotes = [];
     updateWaitingKeyVisuals();
-    playBtn.textContent = '▶ Play';
+    updatePlayBtnUI(false);
     score = 0;
     combo = 0;
     updateScoreDisplay();
-    setStatus('Posisi waktu di-reset ke 0:00.');
+    setStatus('Timeline reset to 0:00.');
   });
 
   speedInput.addEventListener('input', () => {
     speed = Number(speedInput.value);
-    speedValue.textContent = speed.toFixed(2) + '×';
+    speedValue.textContent = speed.toFixed(2) + 'x';
     if (playing) {
       playStartOffset = currentTime;
       playStartTime = performance.now();
@@ -2174,10 +2190,10 @@
       pianoRangeControlGroup.style.display = 'none';
       if (chordHintEl) {
         chordHintEl.innerHTML = (gameMode === 'wait_chord')
-          ? '⏸️ <b>Mode Stop Chord</b>: Tekan Tuts Akor / Spacebar untuk Lanjut'
-          : '⚡ <b>Spacebar / Enter / Hit Line</b>: CHORD SLAM (4-8 Lanes)';
+          ? '<b>Stop Chord Mode</b>: Press chord keys or Spacebar to continue'
+          : '<b>Spacebar / Enter</b>: Chord Slam (All Lanes)';
       }
-      setStatus('Mode 1: Piano Tiles (Rhythm Game) aktif.');
+      setStatus('Mode 1: Piano Tiles active.');
     } else {
       laneKeysContainer.style.display = 'none';
       lanesControlGroup.style.display = 'none';
@@ -2186,10 +2202,10 @@
       updatePianoRollLayout();
       if (chordHintEl) {
         chordHintEl.innerHTML = (gameMode === 'wait_chord')
-          ? '⏸️ <b>Mode Stop Chord</b>: Tekan Tuts Piano Emas / Spacebar untuk Lanjut'
-          : '⚡ <b>Keyboard [A-;] / Klik Tuts Piano</b>: Synthesia Piano Roll';
+          ? '<b>Stop Chord Mode</b>: Press marked keys or Spacebar to continue'
+          : '<b>Keyboard / Click</b>: Real Piano Roll';
       }
-      setStatus('Mode 2: Real Piano Roll (Synthesia Keyboard) aktif.');
+      setStatus('Mode 2: Real Piano Roll active.');
     }
     resize();
     draw();
@@ -2254,13 +2270,13 @@
     }
 
     if (gameMode === 'wait_chord') {
-      setStatus('⏸️ Mode Stop Chord aktif! Lagu berhenti di setiap akor sampai tuts/Space ditekan.');
+      setStatus('Stop Chord Mode active. Song waits at chords until keys or Spacebar pressed.');
     } else if (gameMode === 'wait_all') {
-      setStatus('⏸️ Mode Stop All Notes aktif! Lagu menunggu setiap not ditekan satu per satu.');
+      setStatus('Stop All Notes Mode active. Song waits for every note.');
     } else if (gameMode === 'play') {
-      setStatus('Mode Interaktif aktif! Tekan tuts atau Spacebar/Enter untuk Chord.');
+      setStatus('Interactive Mode active. Play via keyboard or Spacebar for chords.');
     } else {
-      setStatus('Mode Auto-Play aktif.');
+      setStatus('Auto-Play Mode active.');
     }
   });
 
@@ -2283,7 +2299,8 @@
   soundBtn.addEventListener('click', () => {
     initAudio();
     soundEnabled = !soundEnabled;
-    soundBtn.textContent = soundEnabled ? '🔊' : '🔇';
+    soundBtn.innerHTML = soundEnabled ? '<i data-lucide="volume-2"></i>' : '<i data-lucide="volume-x"></i>';
+    if (window.lucide) window.lucide.createIcons();
     if (masterGain && audioCtx) {
       masterGain.gain.setValueAtTime(soundEnabled ? currentVolume : 0, audioCtx.currentTime);
     }
@@ -2445,7 +2462,8 @@
   if (chordHintEl) {
     chordHintEl.style.display = isInteractiveInit ? 'block' : 'none';
     if (gameMode === 'wait_chord') {
-      chordHintEl.innerHTML = '⏸️ <b>Mode Stop Chord</b>: Tekan Tuts Akor / Spacebar untuk Lanjut';
+      chordHintEl.innerHTML = '<b>Stop Chord Mode</b>: Press chord keys or Spacebar to continue';
     }
   }
-})();
+  if (window.lucide) window.lucide.createIcons();
+})();

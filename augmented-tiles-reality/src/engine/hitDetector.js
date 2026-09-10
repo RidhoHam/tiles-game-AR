@@ -200,6 +200,26 @@ export class HitDetector {
 
     const candidates = [];
 
+    const isMidiLane = typeof lane === 'number' && lane >= 21;
+    const matchNote = (n) => {
+      if (!n) return false;
+      if (!isMidiLane) {
+        return n.lane === lane;
+      }
+      if (typeof n.midi === 'number') {
+        if (n.midi === lane) return true;
+        // Octave folding match for 2-octave roll mode
+        const fold = (m) => {
+          let res = m;
+          while (res < 48) res += 12;
+          while (res > 71) res -= 12;
+          return res;
+        };
+        return fold(n.midi) === fold(lane);
+      }
+      return false;
+    };
+
     for (const note of activeNotes) {
       if (!note || typeof note.timeSec !== 'number') continue;
 
@@ -210,19 +230,23 @@ export class HitDetector {
 
       let matchesLane = false;
       if (isChord) {
-        if (note.notes.some(n => n.lane === lane && !n.played)) {
+        if (note.notes.some(n => matchNote(n) && !n.played)) {
           matchesLane = true;
-        } else if (note.lane === lane && !note.played) {
+        } else if (matchNote(note) && !note.played) {
           matchesLane = true;
         }
-      } else if (!note.played && note.lane === lane) {
+      } else if (!note.played && matchNote(note)) {
         matchesLane = true;
       }
 
       if (!matchesLane) continue;
 
       const diffSec = Math.abs(evaluatedTime - note.timeSec);
-      if (diffSec <= this.goodWindowSec) {
+      const allowedWindow = options.isWaiting
+        ? (options.waitingWindowSec ?? 0.350)
+        : (options.goodWindowSec ?? this.goodWindowSec);
+
+      if (diffSec <= allowedWindow) {
         candidates.push({ note, diffSec });
       }
     }
@@ -237,7 +261,7 @@ export class HitDetector {
     let matchedSubNote = null;
     if (Array.isArray(bestCandidate.notes) && bestCandidate.notes.length > 0) {
       for (const subNote of bestCandidate.notes) {
-        if (subNote.lane === lane && !subNote.played) {
+        if (matchNote(subNote) && !subNote.played) {
           subNote.played = true;
           matchedSubNote = subNote;
           break;

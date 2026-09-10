@@ -416,3 +416,29 @@ test('primaryFingerOnly prioritizes 1 finger per hand to support clean 2-finger 
   assert.ok(allLanes.includes(3), 'Middle lane 3 tracked');
   assert.ok(allLanes.includes(4), 'Ring lane 4 tracked');
 });
+
+test('14-lane mode accurately detects slender black keys and gives generous clearance to white keys', () => {
+  // MOCK_RECT_CORNERS: x ranges from 100 to 900 (width 800), y from 200 to 400 (height 200)
+  // u = (x - 100) / 800, v = (y - 200) / 200
+  // Seam 1 (between C3 and D3) is at u = 1/14 ≈ 0.071428 -> x = 100 + 800 * (1/14) = 157.14
+  // Black key C#3 has tolerance ±0.014 -> u in [0.0574, 0.0854] -> x in [145.9, 168.3]
+  // Upper key area: v <= 0.65 -> y <= 330
+
+  // 1. Direct hit on black key C#3 (MIDI 49) in upper zone
+  const blackKeyHit = getLaneFromScreenPoint({ x: 157.14, y: 250 }, MOCK_RECT_CORNERS, 14);
+  assert.equal(blackKeyHit, 49, 'Finger right on seam 1 in upper zone maps to C#3 (MIDI 49)');
+
+  // 2. White key D3 (lane 1) center: u = 1.5/14 ≈ 0.10714 -> x = 100 + 800 * 0.10714 = 185.71
+  const whiteKeyD3Hit = getLaneFromScreenPoint({ x: 185.71, y: 250 }, MOCK_RECT_CORNERS, 14);
+  assert.equal(whiteKeyD3Hit, 1, 'Finger in center of D3 maps cleanly to white key lane 1, not black key');
+
+  // 3. Clear white key area beside black key (e.g. u = 0.090 -> x = 172) in upper zone
+  const whiteKeyClearHit = getLaneFromScreenPoint({ x: 172, y: 250 }, MOCK_RECT_CORNERS, 14);
+  assert.equal(whiteKeyClearHit, 1, 'Finger outside the slim black key tolerance maps to white key lane 1');
+
+  // 4. Near seam but in lower key tip area (v > 0.65, e.g. y = 370 -> v = 0.85):
+  // Should always be a white key (never black key C#3 / MIDI 49)!
+  const lowerKeyHit = getLaneFromScreenPoint({ x: 160, y: 370 }, MOCK_RECT_CORNERS, 14);
+  assert.equal(lowerKeyHit, 1, 'Finger near seam in lower key tip area maps to white key D3 (lane 1), not black key');
+});
+

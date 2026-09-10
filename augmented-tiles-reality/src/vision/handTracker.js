@@ -433,7 +433,7 @@ export class HandTracker {
         let tasksVision = (typeof window !== 'undefined' && window.tasksVision);
         if (!tasksVision) {
           try {
-            tasksVision = await import(/* webpackIgnore: true */ options.bundleUrl || MEDIAPIPE_CDN_BUNDLE);
+            tasksVision = await import(/* @vite-ignore */ (options.bundleUrl || MEDIAPIPE_CDN_BUNDLE));
           } catch (err) {
             console.warn('[HandTracker] tasks-vision bundle dynamic import failed:', err.message);
           }

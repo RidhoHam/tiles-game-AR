@@ -467,13 +467,29 @@ export class ARScene {
   }
 
   /**
+   * Helper to fold MIDI numbers outside the roll keyboard range (48 to 79) into range
+   * @param {number} midi
+   * @returns {number}
+   */
+  _foldRollMidi(midi) {
+    if (typeof midi !== 'number' || isNaN(midi)) return midi;
+    let m = midi;
+    while (m < 48) m += 12;
+    while (m > 79) m -= 12;
+    return m;
+  }
+
+  /**
    * Triggers a physical downward key depression animation on specified lane or MIDI pitch
    * @param {number} laneIndexOrMidi
    */
   triggerKeyDepress(laneIndexOrMidi) {
     let key = null;
-    if (this.viewMode === 'roll' && this.rollKeyMap && this.rollKeyMap.has(laneIndexOrMidi)) {
-      key = this.rollKeyMap.get(laneIndexOrMidi);
+    const targetMidi = (this.viewMode === 'roll' && typeof laneIndexOrMidi === 'number' && laneIndexOrMidi > 14)
+      ? this._foldRollMidi(laneIndexOrMidi)
+      : laneIndexOrMidi;
+    if (this.viewMode === 'roll' && this.rollKeyMap && this.rollKeyMap.has(targetMidi)) {
+      key = this.rollKeyMap.get(targetMidi);
     } else if (this.keyMeshes && this.keyMeshes[laneIndexOrMidi]) {
       key = this.keyMeshes[laneIndexOrMidi];
     }
@@ -1102,8 +1118,11 @@ export class ARScene {
         const tile = this.tilePool.acquire(note);
         if (tile && tile.mesh && this.arenaRoot) {
           let posX = 0;
-          if (this.viewMode === 'roll' && this.rollKeyMap && note.midi && this.rollKeyMap.has(note.midi)) {
-            posX = this.rollKeyMap.get(note.midi).position.x;
+          const targetMidi = (this.viewMode === 'roll' && typeof note.midi === 'number')
+            ? this._foldRollMidi(note.midi)
+            : note.midi;
+          if (this.viewMode === 'roll' && this.rollKeyMap && targetMidi && this.rollKeyMap.has(targetMidi)) {
+            posX = this.rollKeyMap.get(targetMidi).position.x;
           } else {
             posX = this.layout.laneCenters[tile.lane] ?? 0;
           }
@@ -1122,8 +1141,11 @@ export class ARScene {
    */
   triggerHitVFX(laneIndexOrMidi, judgement = 'PERFECT') {
     let posX = 0;
-    if (this.viewMode === 'roll' && this.rollKeyMap && this.rollKeyMap.has(laneIndexOrMidi)) {
-      posX = this.rollKeyMap.get(laneIndexOrMidi).position.x;
+    const targetMidi = (this.viewMode === 'roll' && typeof laneIndexOrMidi === 'number' && laneIndexOrMidi > 14)
+      ? this._foldRollMidi(laneIndexOrMidi)
+      : laneIndexOrMidi;
+    if (this.viewMode === 'roll' && this.rollKeyMap && this.rollKeyMap.has(targetMidi)) {
+      posX = this.rollKeyMap.get(targetMidi).position.x;
     } else {
       posX = this.layout.laneCenters[laneIndexOrMidi] ?? 0;
     }

@@ -3,115 +3,81 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AR Piano Tiles — MIDI to Tile Preview & Player</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎹</text></svg>">
-  <link rel="stylesheet" href="/src/style.css">
+<title>AR Piano Tiles — Minimal Studio</title>
+<meta http-equiv="refresh" content="0; url=ar.html">
+<script>
+  window.location.replace('ar.html');
+</script>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'><path d='M9 18V5l12-2v13'/><circle cx='6' cy='18' r='3'/><circle cx='18' cy='16' r='3'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/src/style.css">
+<script src="https://cdn.jsdelivr.net/npm/lucide@0.469.0/dist/umd/lucide.min.js"></script>
 </head>
 <body>
 <div id="app">
-  <header>
+  <header class="app-header">
     <div class="brand">
-      <h1>AR Piano Tiles</h1>
-      <div class="sub">MIDI to Falling Tiles Player</div>
+      <div class="brand-title">
+        <i data-lucide="music-2"></i>
+        <span>Tiles Studio</span>
+      </div>
+      <div class="track-info-badge">
+        <span id="songName">—</span>
+        <span class="badge-separator">·</span>
+        <span id="bpm">— BPM</span>
+        <span class="badge-separator">·</span>
+        <span id="time">0:00 / 0:00</span>
+        <span id="noteCount" style="display:none;">—</span>
+      </div>
     </div>
 
-    <!-- Dual Mode Switcher Tabs -->
-    <div class="view-mode-tabs" id="viewModeTabs">
-      <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Piano Tiles (Rhythm lanes)">🎮 Tiles</button>
-      <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano Roll (Tuts piano asli & falling notes Synthesia)">🎹 Real Piano</button>
+    <!-- Transport Controls (Center) -->
+    <div class="transport-controls">
+      <button id="playBtn" class="btn btn-primary" disabled title="Play / Pause [Space]">
+        <i data-lucide="play"></i>
+        <span>Play</span>
+      </button>
+      <button id="resetBtn" class="btn btn-icon" disabled title="Reset [Esc]">
+        <i data-lucide="rotate-ccw"></i>
+      </button>
+      <div class="view-mode-tabs" id="viewModeTabs">
+        <button type="button" class="view-tab active" id="viewTilesBtn" data-view="tiles" title="Mode 1: Rhythm Lanes">Tiles</button>
+        <button type="button" class="view-tab" id="viewRollBtn" data-view="roll" title="Mode 2: Real Piano Roll">Real Piano</button>
+      </div>
+      <a href="ar.html" class="btn btn-ar" id="arModeBadge" title="Launch 3D Web AR Mode">
+        <i data-lucide="glasses"></i>
+        <span>AR Mode</span>
+      </a>
     </div>
 
-    <!-- Web AR 3D Mode Launch Badge -->
-    <a href="ar.html" class="ar-mode-badge" id="arModeBadge" title="Launch 3D Web AR Mode with Hand Tracking">
-      🥽 AR Mode (Play in Space)
-    </a>
-
-    <div class="controls">
-      <label class="file-btn">
-        📂 Open MIDI
+    <!-- Right Header Actions -->
+    <div class="header-actions">
+      <label class="btn btn-secondary file-btn" title="Open MIDI File">
+        <i data-lucide="folder-open"></i>
+        <span>MIDI</span>
         <input id="midiFile" type="file" accept=".mid,.midi,audio/midi" />
       </label>
-      <button id="demoBtn">🎵 Demo</button>
-      <button id="playBtn" class="primary" disabled>▶ Play</button>
-      <button id="resetBtn" disabled>↺ Reset</button>
-
-      <span class="control-group">
-        Mode
-        <select id="gameMode" title="Pilih mode: Auto-Play, Interaktif biasa, atau Stop Chord (lagu berhenti di setiap akor sampai ditekan)">
-          <option value="auto">Auto-Play</option>
-          <option value="play">Interactive</option>
-          <option value="wait_chord" selected>⏸️ Stop Chord (Wait)</option>
-          <option value="wait_all">⏸️ Stop All Notes (Wait)</option>
-        </select>
-      </span>
-
-      <!-- Mode 1 (Tiles): Lanes Selection -->
-      <span class="control-group" id="lanesControlGroup">
-        Lanes
-        <select id="lanes">
-          <option value="4">4 lanes</option>
-          <option value="6">6 lanes</option>
-          <option value="8" selected>8 lanes</option>
-          <option value="12">12 lanes</option>
-        </select>
-      </span>
-
-      <!-- Mode 1 (Tiles): Tile Width Selection -->
-      <span class="control-group" id="tileWidthControlGroup">
-        Tile
-        <select id="tileWidthSelect" title="Pilih lebar tile: Ramping (Slim), Sangat Ramping, Sedang, atau Penuh">
-          <option value="slim" selected>Ramping (Slim)</option>
-          <option value="compact">Sangat Ramping</option>
-          <option value="medium">Sedang</option>
-          <option value="full">Penuh (Full)</option>
-        </select>
-      </span>
-
-      <!-- Mode 2 (Roll): Piano Range Selection -->
-      <span class="control-group" id="pianoRangeControlGroup" style="display: none;">
-        Keyboard
-        <select id="pianoRangeSelect" title="Pilih rentang tuts piano: Sesuai Lagu (Auto-Fit), 88 Keys Lengkap, atau 61 Keys">
-          <option value="auto" selected>🎵 Sesuai Lagu (Auto)</option>
-          <option value="88">🎹 Full 88 Keys</option>
-          <option value="61">🎼 61 Keys (C2-C7)</option>
-          <option value="49">🎶 49 Keys (C3-C7)</option>
-        </select>
-      </span>
-
-      <span class="control-group">
-        Speed
-        <input id="speed" class="speed-range" type="range" min="0.25" max="2.5" value="1.0" step="0.05" />
-        <b id="speedValue" style="min-width: 38px;">1.00×</b>
-      </span>
-
-      <span class="control-group">
-        Auto MIDI
-        <select id="autoMutePreset" title="Pilih jalur mana yang di-mute dari suara otomatis agar hanya tuts ketikan Anda yang bersuara">
-          <option value="none" selected>Auto All</option>
-          <option value="right">Mute Right/Melody</option>
-          <option value="left">Mute Left/Bass</option>
-          <option value="all">Mute All (Tuts Only)</option>
-        </select>
-      </span>
-
-      <span class="control-group">
-        Sound
-        <select id="soundType">
-          <option value="strudel" selected>🎹 Strudel Grand (Studio Samples)</option>
-          <option value="piano">✨ Acoustic Synth</option>
-          <option value="bright">⚡ Bright Rhodes</option>
-          <option value="synth">🔔 Synth Bell</option>
-        </select>
-        <button id="soundBtn" title="Toggle Sound" style="padding: 7px 9px;">🔊</button>
-        <input id="volume" class="vol-range" type="range" min="0" max="1" value="0.75" step="0.05" />
-      </span>
-
-      <button id="exportBtn" title="Export Tile Chart as JSON" disabled>📥 Export JSON</button>
+      <button id="demoBtn" class="btn btn-secondary" title="Load Canon in D Demo">
+        <i data-lucide="disc"></i>
+        <span>Demo</span>
+      </button>
+      <div class="volume-control">
+        <button id="soundBtn" class="btn btn-icon" title="Toggle Sound">
+          <i data-lucide="volume-2"></i>
+        </button>
+        <input id="volume" class="vol-range" type="range" min="0" max="1" value="0.75" step="0.05" title="Master Volume" />
+      </div>
+      <button id="openSettingsBtn" class="btn btn-secondary" title="Studio Settings">
+        <i data-lucide="sliders-horizontal"></i>
+        <span>Settings</span>
+      </button>
     </div>
   </header>
 
   <!-- Interactive Timeline Progress Bar -->
-  <div id="timeline">
+  <div id="timeline" title="Click to seek">
     <div id="timeline-progress">
       <div id="timeline-handle"></div>
     </div>
@@ -120,18 +86,19 @@
   <div id="stage">
     <canvas id="canvas"></canvas>
 
-    <!-- Heads Up Display -->
+    <!-- Heads Up Display (HUD) -->
     <div id="hud">
-      <div class="hud-left">
-        <div class="card"><div class="label">Song</div><div class="value" id="songName">—</div></div>
-        <div class="card"><div class="label">BPM</div><div class="value" id="bpm">—</div></div>
-        <div class="card"><div class="label">Tiles</div><div class="value" id="noteCount">—</div></div>
-        <div class="card"><div class="label">Time</div><div class="value" id="time">0:00 / 0:00</div></div>
-      </div>
-      <div class="hud-right" id="gameHud" style="display: none;">
-        <button id="chordSlamBtn" class="chord-slam-hud-btn" title="Tekan Spacebar / Enter atau klik tombol ini untuk memukul semua not chord bersamaan (4-8 lanes)!">⚡ SLAM CHORD [Space]</button>
-        <div class="card score-card"><div class="label">Score</div><div class="value" id="scoreVal">0</div></div>
-        <div class="card score-card"><div class="label">Combo</div><div class="value" id="comboVal">0</div></div>
+      <div id="gameHud" class="hud-pill" style="display: none;">
+        <div class="hud-metric">
+          <span class="hud-label">SCORE</span>
+          <span class="hud-val" id="scoreVal">0</span>
+        </div>
+        <div class="hud-metric-sep"></div>
+        <div class="hud-metric">
+          <span class="hud-label">COMBO</span>
+          <span class="hud-val" id="comboVal">0</span>
+        </div>
+        <button id="chordSlamBtn" class="hud-slam-btn" title="Hit Chord Slam [Space]">SLAM</button>
       </div>
     </div>
 
@@ -140,17 +107,125 @@
 
     <!-- Drag & Drop overlay -->
     <div id="drop">
-      <div class="message">
-        <strong>Pilih atau Drag & Drop File MIDI Di Sini</strong>
-        File MIDI akan otomatis di-parse langsung di browser.<br>
-        Not-not musik dikonversi menjadi falling tiles dengan audio synthesizer.<br><br>
-        <button id="dropDemoBtn" class="primary">▶ Putar Demo Lagu (Canon in D)</button>
+      <div class="drop-card">
+        <div class="drop-icon">
+          <i data-lucide="upload-cloud"></i>
+        </div>
+        <div class="drop-title">Open or Drag & Drop MIDI File Here</div>
+        <div class="drop-sub">Browser converts MIDI notes into real-time interactive tiles</div>
+        <button id="dropDemoBtn" class="btn btn-primary" style="margin-top: 14px;">
+          <i data-lucide="disc"></i>
+          <span>Play Demo (Canon in D)</span>
+        </button>
       </div>
     </div>
 
-    <div id="status">Silakan pilih file MIDI atau klik Demo…</div>
-    <div id="chord-hint" style="display: none;">⚡ <b>Spacebar / Enter / Hit Line</b>: CHORD SLAM (4-8 Lanes)</div>
+    <div id="status">Ready. Select a MIDI file or click Demo…</div>
+    <div id="chord-hint" style="display: none;">Press <b>Spacebar</b> / <b>Enter</b> for Chord Slam</div>
   </div>
+
+  <!-- Settings Modal (Dialog) -->
+  <dialog id="settingsModal" class="settings-modal">
+    <div class="settings-content">
+      <div class="settings-header">
+        <div class="settings-title">
+          <i data-lucide="sliders-horizontal"></i>
+          <span>Studio Settings</span>
+        </div>
+        <button id="closeSettingsBtn" class="btn btn-icon" title="Close Settings">
+          <i data-lucide="x"></i>
+        </button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-section">
+          <div class="section-title">Gameplay</div>
+          <div class="setting-item">
+            <label for="gameMode">Game Mode</label>
+            <select id="gameMode">
+              <option value="auto">Auto-Play</option>
+              <option value="play">Interactive</option>
+              <option value="wait_chord" selected>Stop Chord (Wait)</option>
+              <option value="wait_all">Stop All Notes (Wait)</option>
+            </select>
+          </div>
+          <div class="setting-item" id="lanesControlGroup">
+            <label for="lanes">Lanes</label>
+            <select id="lanes">
+              <option value="4">4 lanes</option>
+              <option value="6">6 lanes</option>
+              <option value="8" selected>8 lanes</option>
+              <option value="12">12 lanes</option>
+            </select>
+          </div>
+          <div class="setting-item" id="tileWidthControlGroup">
+            <label for="tileWidthSelect">Tile Width</label>
+            <select id="tileWidthSelect">
+              <option value="slim" selected>Slim</option>
+              <option value="compact">Compact</option>
+              <option value="medium">Medium</option>
+              <option value="full">Full</option>
+            </select>
+          </div>
+          <div class="setting-item" id="pianoRangeControlGroup" style="display: none;">
+            <label for="pianoRangeSelect">Keyboard Range</label>
+            <select id="pianoRangeSelect">
+              <option value="auto" selected>Auto-Fit to Song</option>
+              <option value="88">Full 88 Keys</option>
+              <option value="61">61 Keys (C2-C7)</option>
+              <option value="49">49 Keys (C3-C7)</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label for="speed">Playback Speed</label>
+            <div class="slider-row">
+              <input id="speed" class="speed-range" type="range" min="0.25" max="2.5" value="1.0" step="0.05" />
+              <b id="speedValue" class="slider-val">1.00x</b>
+            </div>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Audio & Soundbank</div>
+          <div class="setting-item">
+            <label for="soundType">Sound Engine</label>
+            <select id="soundType">
+              <option value="strudel" selected>Strudel Concert Grand (Studio Samples)</option>
+              <option value="piano">Acoustic Synth</option>
+              <option value="bright">Bright Rhodes</option>
+              <option value="synth">Bell Synth</option>
+            </select>
+          </div>
+          <div class="setting-item">
+            <label for="autoMutePreset">Auto MIDI Mute</label>
+            <select id="autoMutePreset">
+              <option value="none" selected>Auto All</option>
+              <option value="right">Mute Right / Melody</option>
+              <option value="left">Mute Left / Bass</option>
+              <option value="all">Mute All (Tuts Only)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-section">
+          <div class="section-title">Data & Shortcuts</div>
+          <div class="setting-item">
+            <label>Export Chart</label>
+            <button id="exportBtn" class="btn btn-secondary" disabled>
+              <i data-lucide="download"></i>
+              <span>Export JSON Chart</span>
+            </button>
+          </div>
+          <div class="shortcuts-legend">
+            <div class="shortcut-item"><span>Play / Pause</span> <kbd>Space</kbd></div>
+            <div class="shortcut-item"><span>Reset</span> <kbd>Esc</kbd></div>
+            <div class="shortcut-item"><span>Chord Slam</span> <kbd>Space</kbd> / <kbd>Enter</kbd></div>
+            <div class="shortcut-item"><span>4 Lanes Keys</span> <kbd>D</kbd> <kbd>F</kbd> <kbd>J</kbd> <kbd>K</kbd></div>
+            <div class="shortcut-item"><span>8 Lanes Keys</span> <kbd>1-8</kbd> / <kbd>ASDF JKL;</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
 </div>
 
 <!-- Tone.js MIDI Library for full-spec SMF parsing -->

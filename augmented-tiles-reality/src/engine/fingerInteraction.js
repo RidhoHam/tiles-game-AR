@@ -18,8 +18,8 @@ export const FINGER_STATES = Object.freeze({
 export const FINGER_NAMES = Object.freeze(['thumb', 'index', 'middle', 'ring', 'pinky']);
 
 export const DEFAULT_INTERACTION_CONFIG = Object.freeze({
-  pressVelocityThreshold: 0.015, // Normalized Y downward movement per frame to trigger press
-  releaseVelocityThreshold: -0.005, // Upward velocity to transition into release
+  pressVelocityThreshold: 0.007, // Sensitive & responsive normalized Y downward movement per frame
+  releaseVelocityThreshold: -0.003, // Upward velocity to transition into release
   debounceCooldownSec: 0.075, // 75ms debounce cooldown between triggers on same finger
   screenWidth: 1920,
   screenHeight: 1080
@@ -72,35 +72,67 @@ export function getLaneFromScreenPoint(pt, corners, numLanes = 8) {
   const dyY = botMidY - topMidY;
   const depthSq = dyX * dyX + dyY * dyY || 1;
 
-  // v is position along depth axis (0 at Hit Line p1..p2, 1 at front edge p4..p3)
+  // v is position along depth axis (0 at back edge p1..p2, 1 at front edge p4..p3)
+  // Negative v is the comfortable desk tapping zone BEHIND the piano
   const v = ((pt.x - topMidX) * dyX + (pt.y - topMidY) * dyY) / depthSq;
 
-  // Focused vertical tolerance [-0.3 to 1.35] ensuring fingers must be on or near the piano hitbox
-  if (v < -0.3 || v > 1.35) {
+  // Vertical tolerance allowing the player to tap comfortably behind the piano on the desk [-0.70 to 1.35]
+  if (v < -0.70 || v > 1.35) {
     return -1;
   }
 
-  const clampedV = Math.max(0, Math.min(1, v));
-
-  // Interpolate left and right boundaries at depth v
-  const lx = p1.x + (p4.x - p1.x) * clampedV;
-  const ly = p1.y + (p4.y - p1.y) * clampedV;
-  const rx = p2.x + (p3.x - p2.x) * clampedV;
-  const ry = p2.y + (p3.y - p2.y) * clampedV;
+  // Extrapolate left and right perspective boundaries at exact depth v
+  // (Do NOT clamp v to 0, which breaks perspective convergence and shifts outer lanes!)
+  const safeV = Math.max(-0.70, Math.min(1.35, v));
+  const lx = p1.x + (p4.x - p1.x) * safeV;
+  const ly = p1.y + (p4.y - p1.y) * safeV;
+  const rx = p2.x + (p3.x - p2.x) * safeV;
+  const ry = p2.y + (p3.y - p2.y) * safeV;
 
   const spanX = rx - lx;
   const spanY = ry - ly;
   const spanSq = spanX * spanX + spanY * spanY || 1;
 
-  // u is position along width [0.0..1.0] from Left to Right
+  // u is position along width [0.0..1.0] from Left to Right at depth safeV
   const u = ((pt.x - lx) * spanX + (pt.y - ly) * spanY) / spanSq;
 
-  // Generous horizontal tolerance on left & right edges (-0.1 to 1.1)
-  if (u < -0.1 || u > 1.1) {
+  // Generous horizontal tolerance on left & right edges (-0.08 to 1.08)
+  if (u < -0.08 || u > 1.08) {
     return -1;
   }
 
   const clampedU = Math.max(0, Math.min(0.999, u));
+
+  // In 2-Octave Real Piano mode (numLanes === 14), detect both Black and White keys
+  if (numLanes === 14) {
+    const BLACK_KEY_SEAMS = {
+      1: 49,  // C#3 between C3(0) and D3(1)
+      2: 51,  // D#3 between D3(1) and E3(2)
+      4: 54,  // F#3 between F3(3) and G3(4)
+      5: 56,  // G#3 between G3(4) and A3(5)
+      6: 58,  // A#3 between A3(5) and B3(6)
+      8: 61,  // C#4 between C4(7) and D4(8)
+      9: 63,  // D#4 between D4(8) and E4(9)
+      11: 66, // F#4 between F4(10) and G4(11)
+      12: 68, // G#4 between G4(11) and A4(12)
+      13: 70  // A#4 between A4(12) and B4(13)
+    };
+
+    // Black keys sit on desk behind keys (v <= 0) and upper key area (v <= 0.65)
+    // Tolerance is 0.014 in u space (~40% of white key width 0.0714), leaving generous room for white keys
+    if (v <= 0.65) {
+      for (const [seamStr, midi] of Object.entries(BLACK_KEY_SEAMS)) {
+        const seam = Number(seamStr);
+        const centerU = seam / 14;
+        if (Math.abs(u - centerU) <= 0.014) {
+          return midi;
+        }
+      }
+    }
+
+    return Math.floor(clampedU * 14);
+  }
+
   return Math.floor(clampedU * numLanes);
 }
 
@@ -310,18 +342,10 @@ export class FingerInteractionController {
       }
       const handName = String(rawHand).toLowerCase().startsWith('l') ? 'Left' : 'Right';
 
-      // Select fingers to track: when primaryFingerOnly is enabled, track 1 primary finger per hand (index or active tapping finger)
+      // Select fingers to track: when primaryFingerOnly is enabled, strictly track only the index finger (no thumb/palm noise)
       let fingerNames = FINGER_NAMES;
       if (this.primaryFingerOnly) {
-        let activeStrikingFinger = null;
-        for (const fn of FINGER_NAMES) {
-          const pt = this._extractFingerPoint(hand, fn);
-          if (pt && typeof pt.velocityY === 'number' && pt.velocityY > this.pressVelocityThreshold) {
-            activeStrikingFinger = fn;
-            break;
-          }
-        }
-        fingerNames = activeStrikingFinger ? [activeStrikingFinger] : ['index'];
+        fingerNames = ['index'];
       }
 
       const handPressEvents = [];

@@ -12,6 +12,16 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    open: false,
+    open: '/ar.html',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url === '/' || req.url === '/index.html') {
+          res.writeHead(302, { Location: '/ar.html' });
+          res.end();
+          return;
+        }
+        next();
+      });
+    },
   },
 });

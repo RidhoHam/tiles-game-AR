@@ -480,3 +480,40 @@ test('evaluateLanePress selects closest candidate note when multiple match lane 
   assert.equal(note2.played, false);
 });
 
+test('evaluateLanePress with isWaiting rejects wrong note and rejects future notes', () => {
+  const detector = new HitDetector({
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  const waitingNote = { id: 'wait_e4', lane: 9, midi: 64, timeSec: 0.0, played: false };
+  const futureNote = { id: 'future_c4', lane: 7, midi: 60, timeSec: 3.5, played: false };
+  const activeNotes = [waitingNote, futureNote];
+
+  // 1. Wrong key (MIDI 60 / C4) while waiting at 0.0s should return null, NOT hit future note
+  const resWrong = detector.evaluateLanePress(60, 0.0, activeNotes, { isWaiting: true });
+  assert.equal(resWrong, null);
+  assert.equal(waitingNote.played, false);
+  assert.equal(futureNote.played, false);
+
+  // 2. Correct key (MIDI 64 / E4) while waiting at 0.0s hits the waiting note
+  const resCorrect = detector.evaluateLanePress(64, 0.0, activeNotes, { isWaiting: true });
+  assert.ok(resCorrect);
+  assert.equal(resCorrect.note.id, 'wait_e4');
+  assert.equal(waitingNote.played, true);
+});
+
+test('evaluateLanePress in tiles mode (lane < 21) does not falsely match MIDI pitch folding', () => {
+  const detector = new HitDetector({
+    goodWindowSec: 0.120,
+    inputLatencyCompensationSec: 0.040
+  });
+
+  // Note in lane 6 with MIDI 64 (E4). User taps lane 4.
+  // 4 + 12*4 = 52. If MIDI folding was run on lane indices, it might match. It must NOT match!
+  const noteInLane6 = { id: 'n_l6', lane: 6, midi: 64, timeSec: 1.0, played: false };
+  const res = detector.evaluateLanePress(4, 0.96, [noteInLane6]);
+  assert.equal(res, null);
+  assert.equal(noteInLane6.played, false);
+});
+

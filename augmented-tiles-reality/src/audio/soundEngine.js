@@ -10,6 +10,8 @@
  * - Volume control with master gain clamping
  * - Safe execution in SSR/Node and headless test environments
  */
+import { AudioCacheManager } from '../core/audio/audioCache.js';
+import { calculatePitchPan, createPannerNode } from '../core/audio/stereoPanner.js';
 
 export const STRUDEL_PIANO_BASE = 'https://raw.githubusercontent.com/felixroos/dough-samples/main/piano/';
 
@@ -115,6 +117,7 @@ export class SoundEngine {
     this.bassBoost = null;
     this.sampleBuffers = new Map();
     this.pendingLoads = new Map();
+    this.cacheManager = options.cacheManager || new AudioCacheManager();
     this.isInitialized = false;
     this.isMuted = false;
   }
@@ -254,11 +257,19 @@ export class SoundEngine {
 
     const promise = (async () => {
       try {
-        const response = await fetch(sampleInfo.url);
-        if (!response.ok) return null;
-        const arrayBuffer = await response.arrayBuffer();
+        let arrayBuffer = this.cacheManager ? await this.cacheManager.get(sampleInfo.url) : null;
+        if (!arrayBuffer) {
+          const response = await fetch(sampleInfo.url);
+          if (!response.ok) return null;
+          arrayBuffer = await response.arrayBuffer();
+          if (this.cacheManager) {
+            await this.cacheManager.put(sampleInfo.url, arrayBuffer);
+          }
+        }
+
         if (typeof this.ctx.decodeAudioData === 'function') {
-          const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
+          // decodeAudioData consumes arrayBuffer in some browsers, so slice a copy
+          const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer.slice(0));
           this.sampleBuffers.set(sampleInfo.note, audioBuffer);
           return audioBuffer;
         }
@@ -331,23 +342,31 @@ export class SoundEngine {
     }
 
     const noteGain = this.ctx.createGain();
-    const peak = Math.max(0.01, velocity * 0.9);
-    const releaseSec = 0.35;
+    const peak = Math.max(0.05, velocity * 0.9);
+    const sustainDuration = Math.max(duration || 0.35, 1.2);
+    const releaseSec = 0.5;
 
     if (noteGain.gain?.setValueAtTime) {
       noteGain.gain.setValueAtTime(peak, now);
       if (noteGain.gain.exponentialRampToValueAtTime) {
-        noteGain.gain.setValueAtTime(peak, now + Math.max(0, duration - 0.05));
-        noteGain.gain.exponentialRampToValueAtTime(0.0001, now + duration + releaseSec);
+        noteGain.gain.setValueAtTime(peak, now + Math.max(0.05, (duration || 0.35) - 0.05));
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, now + sustainDuration + releaseSec);
       }
     }
 
     source.connect(noteGain);
-    noteGain.connect(this.getInputNode());
+    const panVal = calculatePitchPan(sample.midi);
+    const panner = createPannerNode(this.ctx, panVal);
+    if (panner) {
+      noteGain.connect(panner);
+      panner.connect(this.getInputNode());
+    } else {
+      noteGain.connect(this.getInputNode());
+    }
 
     source.start(now);
     if (typeof source.stop === 'function') {
-      source.stop(now + duration + releaseSec);
+      source.stop(now + sustainDuration + releaseSec + 0.5);
     }
 
     return { mode: 'sample', sample, source, noteGain };
@@ -395,8 +414,9 @@ export class SoundEngine {
 
     // Natural piano amplitude envelope: rapid hammer attack + gentle sustain decay
     const gain = this.ctx.createGain();
-    const peakVol = Math.max(0.08, velocity * 0.85);
-    const releaseSec = 0.38;
+    const peakVol = Math.max(0.12, velocity * 0.9);
+    const sustainDuration = Math.max(0.55, duration || 0.35);
+    const releaseSec = 0.55;
 
     if (gain.gain?.setValueAtTime) {
       gain.gain.setValueAtTime(0.0001, now);
@@ -404,9 +424,9 @@ export class SoundEngine {
         gain.gain.linearRampToValueAtTime(peakVol, now + 0.004); // 4ms attack
       }
       if (gain.gain.exponentialRampToValueAtTime) {
-        const decayTime = Math.max(now + 0.05, now + Math.min(0.08, duration * 0.5));
+        const decayTime = Math.max(now + 0.05, now + Math.min(0.12, sustainDuration * 0.5));
         gain.gain.exponentialRampToValueAtTime(peakVol * 0.70, decayTime); // hammer strike transient
-        gain.gain.exponentialRampToValueAtTime(0.0001, now + duration + releaseSec); // sustain decay
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + sustainDuration + releaseSec); // sustain decay
       }
     }
 
@@ -419,13 +439,20 @@ export class SoundEngine {
       osc1.connect(gain);
       osc2.connect(gain);
     }
-    gain.connect(dest);
+    const panVal = calculatePitchPan(midi);
+    const panner = createPannerNode(this.ctx, panVal);
+    if (panner) {
+      gain.connect(panner);
+      panner.connect(dest);
+    } else {
+      gain.connect(dest);
+    }
 
     osc1.start(now);
     osc2.start(now);
     if (typeof osc1.stop === 'function') {
-      osc1.stop(now + duration + releaseSec + 0.05);
-      osc2.stop(now + duration + releaseSec + 0.05);
+      osc1.stop(now + sustainDuration + releaseSec + 0.1);
+      osc2.stop(now + sustainDuration + releaseSec + 0.1);
     }
 
     return { mode: 'synth', midi, freq, osc1, osc2, filter, gain };
