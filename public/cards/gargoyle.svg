@@ -1,0 +1,101 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850" role="img" aria-labelledby="titleGargoyle">
+  <title id="titleGargoyle">Kartu Gargoyle Pasir - peran prajurit - penanda 6</title>
+  <defs>
+    <clipPath id="innerGargoyle"><rect x="34" y="34" width="532" height="782" rx="14"/></clipPath>
+    <pattern id="frameGargoyle" width="34" height="34" patternUnits="userSpaceOnUse" patternTransform="rotate(12)">
+      <path d="M0 17 H34 M17 0 V34" stroke="#0c3b2a" stroke-width="0.8" stroke-opacity="0.18" fill="none"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="850" fill="#eef3ea"/>
+
+  <g clip-path="url(#innerGargoyle)">
+    <rect x="34" y="34" width="532" height="782" fill="#dfeada"/>
+    <rect x="34" y="34" width="532" height="782" fill="url(#frameGargoyle)"/>
+
+    <g fill="none" stroke="#0c3b2a" stroke-opacity="0.6">
+      <path d="M118 128 L268 128 L268 262 L118 262 Z" stroke-width="5"/>
+      <path d="M143 153 L243 153 L243 237 L143 237 Z" stroke-width="8" stroke-dasharray="20 11"/>
+      <path d="M193 262 v64" stroke-width="3"/>
+      <path d="M468 128 a112 112 0 0 1 -0.1 0" stroke-width="6"/>
+      <path d="M468 128 a78 78 0 0 1 -0.1 0" stroke-width="3" stroke-dasharray="5 9"/>
+      <path d="M468 128 a40 40 0 0 1 -0.1 0" stroke-width="13" stroke-dasharray="17 12"/>
+      <path d="M330 606 L560 760" stroke-width="7" stroke-dasharray="2 15"/>
+      <path d="M330 648 L560 802" stroke-width="3"/>
+      <path d="M60 748 q86 -58 172 -16" stroke-width="6"/>
+      <path d="M60 692 q86 -58 172 -16" stroke-width="2" stroke-dasharray="7 6"/>
+      <path d="M60 652 q86 -58 172 -16" stroke-width="11" stroke-dasharray="24 13"/>
+      <path d="M96 470 L300 470 L300 528 L96 528 Z" stroke-width="5"/>
+      <path d="M130 470 v58 M164 470 v58 M198 470 v58 M232 470 v58" stroke-width="2" stroke-dasharray="6 5"/>
+    </g>
+
+    <g fill="#0c3b2a">
+      <circle cx="193" cy="326" r="12"/>
+      <circle cx="468" cy="160" r="8"/>
+      <circle cx="556" cy="240" r="17"/>
+      <circle cx="418" cy="214" r="10"/>
+      <circle cx="86" cy="118" r="9"/>
+      <circle cx="120" cy="118" r="9"/>
+      <circle cx="154" cy="118" r="9"/>
+      <circle cx="188" cy="118" r="9"/>
+      <circle cx="222" cy="118" r="9"/>
+      <circle cx="256" cy="118" r="9"/>
+    </g>
+
+    <g fill="none" stroke="#2d7f8f" stroke-width="6">
+      <path d="M470 560 h60 v-44"/>
+      <path d="M470 616 h60 v44"/>
+      <circle cx="500" cy="522" r="16"/>
+    </g>
+
+    <g stroke="#0c3b2a" stroke-width="4" fill="#e6f0e0">
+      <path d="M300 430 h60 v-60 h-60 z" fill="#0c3b2a"/>
+      <path d="M244 430 h60 v-34 h58 v34 h24 v70 h-142 z"/>
+      <path d="M262 466 l-16 -38 l20 -4 l14 34 z" fill="#2d7f8f"/>
+      <path d="M398 428 l18 -40 l20 6 l-16 38 z" fill="#2d7f8f"/>
+      <path d="M186 500 q-104 -46 -104 -160 q86 12 140 74 q26 32 22 86 z"/>
+      <path d="M400 498 q96 -52 96 -166 q-80 18 -130 82 q-24 30 -18 84 z"/>
+      <path d="M182 502 q-64 -34 -72 -110" fill="none" stroke-width="3"/>
+      <path d="M404 500 q58 -38 66 -114" fill="none" stroke-width="3"/>
+      <path d="M276 500 h88 v64 h-88 z" fill="#0c3b2a"/>
+      <path d="M266 564 h108 v48 h-108 z"/>
+      <path d="M258 612 h124 l-14 52 h-96 z"/>
+      <path d="M268 664 h30 l-8 56 h-28 z" fill="#2d7f8f"/>
+      <path d="M362 664 h30 l10 56 h-28 z" fill="#2d7f8f"/>
+      <path d="M290 500 l10 -30 h40 l10 30" fill="none" stroke-width="8"/>
+      <circle cx="300" cy="446" r="6" fill="#e6f0e0"/>
+      <circle cx="360" cy="446" r="6" fill="#e6f0e0"/>
+    </g>
+
+    <g fill="#0c3b2a" font-family="Verdana, Geneva, sans-serif" font-weight="700">
+      <text x="60" y="800" font-size="46" letter-spacing="1">GARGOYLE</text>
+      <text x="536" y="404" font-size="20" text-anchor="end" letter-spacing="7">PASIR</text>
+      <text x="60" y="122" font-size="26" letter-spacing="8" font-family="Georgia, 'Times New Roman', serif">PRAJURIT</text>
+    </g>
+
+    <g fill="#2d7f8f">
+      <path d="M60 406 h26 v12 h-26 z"/>
+      <path d="M100 406 h26 v12 h-26 z"/>
+      <path d="M140 406 h26 v12 h-26 z"/>
+      <path d="M180 406 h26 v12 h-26 z"/>
+    </g>
+
+    <g fill="none" stroke="#2d7f8f" stroke-width="3">
+      <rect x="60" y="742" width="112" height="52" rx="6"/>
+    </g>
+    <text x="116" y="776" text-anchor="middle" font-family="Verdana, Geneva, sans-serif" font-size="22" font-weight="700" fill="#2d7f8f">P-06</text>
+    <g fill="#2d7f8f">
+      <circle cx="80" cy="716" r="9"/>
+      <circle cx="108" cy="716" r="9"/>
+      <circle cx="136" cy="716" r="9"/>
+      <circle cx="164" cy="716" r="9"/>
+      <circle cx="80" cy="688" r="9"/>
+      <circle cx="108" cy="688" r="9"/>
+    </g>
+  </g>
+
+  <rect x="14" y="14" width="572" height="822" fill="none" stroke="#0c3b2a" stroke-width="12"/>
+  <rect x="34" y="34" width="532" height="782" fill="none" stroke="#2d7f8f" stroke-width="4"/>
+  <path d="M14 14 L90 14 M14 14 L14 90" stroke="#2d7f8f" stroke-width="4"/>
+  <path d="M14 836 L90 836 M14 836 L14 760" stroke="#0c3b2a" stroke-width="4"/>
+</svg>

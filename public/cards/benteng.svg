@@ -1,0 +1,89 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850" role="img" aria-labelledby="titleBenteng">
+  <title id="titleBenteng">Kartu Benteng Pasir - peran base - penanda 1</title>
+  <defs>
+    <clipPath id="innerBenteng"><rect x="34" y="34" width="532" height="782" rx="14"/></clipPath>
+    <pattern id="grainBenteng" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(17)">
+      <path d="M0 4.5H9" stroke="#123a63" stroke-width="0.6" stroke-opacity="0.18" fill="none"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="850" fill="#f4ecd6"/>
+
+  <g clip-path="url(#innerBenteng)">
+    <rect x="34" y="34" width="532" height="782" fill="#e9dfc2"/>
+    <rect x="34" y="34" width="532" height="782" fill="url(#grainBenteng)"/>
+
+    <g fill="none" stroke="#123a63" stroke-opacity="0.55">
+      <circle cx="118" cy="212" r="150" stroke-width="3"/>
+      <circle cx="118" cy="212" r="118" stroke-width="6" stroke-dasharray="3 11"/>
+      <circle cx="118" cy="212" r="86" stroke-width="3"/>
+      <circle cx="118" cy="212" r="52" stroke-width="10" stroke-dasharray="26 14"/>
+
+      <path d="M470 120 L560 210 L470 300" stroke-width="7" stroke-linejoin="round"/>
+      <path d="M470 150 L535 205 L470 262" stroke-width="3" stroke-linejoin="round"/>
+      <path d="M470 186 L520 212 L470 238" stroke-width="14" stroke-linecap="square"/>
+
+      <path d="M60 700 L560 452" stroke-width="4" stroke-dasharray="16 9"/>
+      <path d="M60 748 L560 500" stroke-width="2" stroke-dasharray="5 7"/>
+      <path d="M96 452 L360 640" stroke-width="6" stroke-dasharray="2 12"/>
+
+      <path d="M356 618 q64 -44 128 -18" stroke-width="5"/>
+      <path d="M356 660 q64 -44 128 -18" stroke-width="5"/>
+      <path d="M356 702 q64 -44 128 -18" stroke-width="5" stroke-dasharray="10 8"/>
+    </g>
+
+    <g fill="#123a63">
+      <circle cx="118" cy="212" r="9"/>
+      <circle cx="470" cy="212" r="22"/>
+      <circle cx="498" cy="180" r="11"/>
+      <circle cx="522" cy="146" r="7"/>
+      <circle cx="540" cy="108" r="4"/>
+      <circle cx="62" cy="470" r="12"/>
+      <circle cx="96" cy="470" r="12"/>
+      <circle cx="130" cy="470" r="12"/>
+      <circle cx="164" cy="470" r="12"/>
+      <circle cx="198" cy="470" r="12"/>
+    </g>
+
+    <g fill="none" stroke="#a9822c" stroke-width="5">
+      <path d="M84 560 L212 560 L212 470 L144 470 L144 396"/>
+      <path d="M420 560 L536 560"/>
+    </g>
+
+    <g stroke="#123a63" stroke-width="4" fill="#d8cba6">
+      <rect x="150" y="352" width="292" height="228" rx="4"/>
+      <rect x="122" y="300" width="86" height="152"/>
+      <rect x="384" y="272" width="86" height="180"/>
+      <rect x="252" y="244" width="96" height="132"/>
+      <path d="M244 244 h112 v-20 h-112 z"/>
+      <path d="M122 300 h86 v-18 h-86 z"/>
+      <path d="M384 272 h86 v-18 h-86 z"/>
+      <path d="M244 352 h104 v72 h-104 z" fill="#123a63"/>
+      <path d="M244 424 h104 v-72" fill="none"/>
+      <path d="M262 352 v40 M290 352 v40 M318 352 v40 M346 352 v40" stroke="#e9dfc2" stroke-width="6"/>
+    </g>
+
+    <g fill="#123a63" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+      <text x="62" y="118" font-size="60" letter-spacing="4">BENTENG</text>
+      <text x="60" y="152" font-size="17" letter-spacing="9" font-family="Verdana, Geneva, sans-serif" font-weight="400">PASIR PENJAGA GARIS</text>
+      <text x="536" y="700" font-size="30" text-anchor="end" letter-spacing="2">BASE</text>
+    </g>
+
+    <g fill="#a9822c">
+      <rect x="60" y="612" width="150" height="12"/>
+      <rect x="60" y="634" width="96" height="12"/>
+      <rect x="60" y="656" width="122" height="6"/>
+    </g>
+
+    <g fill="none" stroke="#123a63" stroke-width="3">
+      <rect x="440" y="742" width="110" height="52" rx="6"/>
+    </g>
+    <text x="495" y="776" text-anchor="middle" font-family="Verdana, Geneva, sans-serif" font-size="22" font-weight="700" fill="#123a63">B-01</text>
+    <circle cx="470" cy="720" r="9" fill="#123a63"/>
+  </g>
+
+  <rect x="14" y="14" width="572" height="822" fill="none" stroke="#123a63" stroke-width="12"/>
+  <rect x="34" y="34" width="532" height="782" fill="none" stroke="#a9822c" stroke-width="4"/>
+  <path d="M14 14 L90 14 M14 14 L14 90" stroke="#123a63" stroke-width="4"/>
+  <path d="M586 836 L510 836 M586 836 L586 760" stroke="#a9822c" stroke-width="4"/>
+</svg>

@@ -1,0 +1,95 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850" role="img" aria-labelledby="titleKsatria">
+  <title id="titleKsatria">Kartu Kesatria Pasir - peran prajurit - penanda 5</title>
+  <defs>
+    <clipPath id="innerKsatria"><rect x="34" y="34" width="532" height="782" rx="14"/></clipPath>
+    <pattern id="waveKsatria" width="30" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(24)">
+      <path d="M0 7 q7.5 -7 15 0 q7.5 7 15 0" fill="none" stroke="#14532d" stroke-width="1" stroke-opacity="0.22"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="850" fill="#f1f4e4"/>
+
+  <g clip-path="url(#innerKsatria)">
+    <rect x="34" y="34" width="532" height="782" fill="#e4ebd2"/>
+    <rect x="34" y="34" width="532" height="782" fill="url(#waveKsatria)"/>
+
+    <g fill="none" stroke="#14532d" stroke-opacity="0.6">
+      <path d="M112 640 L212 640 L212 540 L112 540 Z" stroke-width="6"/>
+      <path d="M136 616 L188 616 L188 564 L136 564 Z" stroke-width="3" stroke-dasharray="8 5"/>
+      <path d="M162 540 v-92" stroke-width="7"/>
+      <path d="M118 470 a44 44 0 0 1 88 0" stroke-width="5"/>
+      <path d="M138 470 a24 24 0 0 1 48 0" stroke-width="10" stroke-dasharray="16 9"/>
+      <path d="M470 236 a104 104 0 1 1 -0.1 0" stroke-width="4"/>
+      <path d="M470 284 a56 56 0 1 1 -0.1 0" stroke-width="12" stroke-dasharray="28 13"/>
+      <circle cx="470" cy="236" r="20" stroke-width="3"/>
+      <path d="M470 132 L470 236 L560 184 Z" stroke-width="5"/>
+      <path d="M60 742 L330 656" stroke-width="6" stroke-dasharray="18 9"/>
+      <path d="M60 786 L330 700" stroke-width="2" stroke-dasharray="5 7"/>
+      <path d="M400 616 q76 -50 148 -22" stroke-width="5"/>
+      <path d="M400 660 q76 -50 148 -22" stroke-width="2" stroke-dasharray="9 7"/>
+      <path d="M400 704 q76 -50 148 -22" stroke-width="10" stroke-dasharray="30 14"/>
+      <path d="M86 132 h96 v56 h-96 z" stroke-width="4"/>
+      <path d="M134 132 v56 M86 160 h96" stroke-width="2" stroke-dasharray="6 5"/>
+    </g>
+
+    <g fill="#14532d">
+      <circle cx="162" cy="448" r="10"/>
+      <circle cx="470" cy="236" r="9"/>
+      <circle cx="548" cy="184" r="15"/>
+      <circle cx="560" cy="470" r="8"/>
+      <circle cx="440" cy="112" r="11"/>
+      <circle cx="472" cy="96" r="11"/>
+      <circle cx="504" cy="112" r="11"/>
+    </g>
+
+    <g fill="none" stroke="#b4770f" stroke-width="6">
+      <path d="M60 430 h64 v-52"/>
+      <circle cx="92" cy="356" r="20"/>
+    </g>
+
+    <g stroke="#14532d" stroke-width="4" fill="#e8efdb">
+      <path d="M300 560 q92 -48 176 -22 l-14 62 q-84 -26 -162 20 z"/>
+      <path d="M470 538 l-12 62" />
+      <path d="M312 592 l-16 -74 l52 -10 l16 74 z" fill="#14532d"/>
+      <path d="M262 500 h96 v-64 h-96 z"/>
+      <path d="M262 436 h96 v-58 h-96 z" fill="#14532d"/>
+      <circle cx="310" cy="404" r="34" fill="#b4770f"/>
+      <path d="M310 370 v-34 h20 l-8 34 z" fill="#14532d"/>
+      <path d="M338 476 l88 34 l-24 44 l-84 -34 z" fill="#b4770f"/>
+      <path d="M330 480 l40 -44 l72 56 l-40 44 z" fill="#14532d"/>
+      <path d="M420 428 l96 -84 l18 20 l-96 84 z" fill="#14532d"/>
+      <path d="M500 344 l40 -34 l14 16 l-40 34 z" fill="#b4770f"/>
+      <path d="M356 456 l-20 40 l20 22" fill="none" stroke-width="12"/>
+      <path d="M262 436 l-14 -30" />
+    </g>
+
+    <g fill="#14532d" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+      <text x="60" y="122" font-size="44" letter-spacing="1">KESATRIA</text>
+      <text x="536" y="136" font-size="19" text-anchor="end" letter-spacing="6" font-family="Verdana, Geneva, sans-serif">PASIR</text>
+      <text x="60" y="790" font-size="30" letter-spacing="5" font-family="Verdana, Geneva, sans-serif">PRAJURIT</text>
+    </g>
+
+    <g fill="#b4770f">
+      <path d="M56 806 h30 v10 h-30 z"/>
+      <path d="M96 806 h30 v10 h-30 z"/>
+      <path d="M136 806 h30 v10 h-30 z"/>
+    </g>
+
+    <g fill="none" stroke="#b4770f" stroke-width="3">
+      <rect x="432" y="742" width="112" height="52" rx="6"/>
+    </g>
+    <text x="488" y="776" text-anchor="middle" font-family="Verdana, Geneva, sans-serif" font-size="22" font-weight="700" fill="#b4770f">P-05</text>
+    <g fill="#b4770f">
+      <circle cx="452" cy="716" r="9"/>
+      <circle cx="480" cy="716" r="9"/>
+      <circle cx="508" cy="716" r="9"/>
+      <circle cx="536" cy="716" r="9"/>
+      <circle cx="424" cy="716" r="9"/>
+    </g>
+  </g>
+
+  <rect x="14" y="14" width="572" height="822" fill="none" stroke="#14532d" stroke-width="12"/>
+  <rect x="34" y="34" width="532" height="782" fill="none" stroke="#b4770f" stroke-width="4"/>
+  <path d="M14 836 L90 836 M14 836 L14 760" stroke="#14532d" stroke-width="4"/>
+  <path d="M586 836 L510 836 M586 836 L586 760" stroke="#b4770f" stroke-width="4"/>
+</svg>

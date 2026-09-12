@@ -1,0 +1,21 @@
+﻿<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+    <meta name="theme-color" content="#55afc8" />
+    <title>Perang Benteng Pasir AR</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700&family=Inter:wght@500;600;700&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <!-- MindAR builds its own video element and overlay inside #ar-root, so the
+         element must exist before CardTrackingController.start() is called. It
+         sits BEHIND the transparent WebGL canvas. -->
+    <div id="ar-root" aria-hidden="true"></div>
+    <canvas id="scene" aria-label="Arena Perang Benteng Pasir AR"></canvas>
+    <div id="ui"></div>
+    <script type="module" src="/src/app/bootstrap.js"></script>
+  </body>
+</html>

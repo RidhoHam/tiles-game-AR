@@ -1,0 +1,89 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850" role="img" aria-labelledby="titleBunker">
+  <title id="titleBunker">Kartu Bunker Berduri - peran base - penanda 2</title>
+  <defs>
+    <clipPath id="innerBunker"><rect x="34" y="34" width="532" height="782" rx="14"/></clipPath>
+    <pattern id="hatchBunker" width="16" height="16" patternUnits="userSpaceOnUse" patternTransform="rotate(-28)">
+      <path d="M0 0V16" stroke="#0f3355" stroke-width="1.1" stroke-opacity="0.22" fill="none"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="850" fill="#f2f0e4"/>
+
+  <g clip-path="url(#innerBunker)">
+    <rect x="34" y="34" width="532" height="782" fill="#e6e6d2"/>
+    <rect x="34" y="34" width="532" height="782" fill="url(#hatchBunker)"/>
+
+    <g fill="none" stroke="#0f3355" stroke-opacity="0.6">
+      <path d="M96 250 L330 90 L520 208" stroke-width="8" stroke-linecap="round"/>
+      <path d="M96 292 L330 132 L520 250" stroke-width="3" stroke-dasharray="12 7"/>
+      <path d="M150 214 L470 418" stroke-width="5"/>
+      <path d="M150 256 L470 460" stroke-width="2" stroke-dasharray="4 9"/>
+      <path d="M60 96 L250 96 L250 150" stroke-width="4"/>
+      <path d="M300 96 L540 96" stroke-width="4" stroke-dasharray="18 8"/>
+      <circle cx="466" cy="628" r="96" stroke-width="4"/>
+      <circle cx="466" cy="628" r="66" stroke-width="8" stroke-dasharray="30 12"/>
+      <circle cx="466" cy="628" r="34" stroke-width="4"/>
+      <path d="M60 470 q70 -26 140 0 q70 26 140 0" stroke-width="4"/>
+      <path d="M60 512 q70 -26 140 0 q70 26 140 0" stroke-width="2" stroke-dasharray="6 8"/>
+      <path d="M60 552 q70 -26 140 0 q70 26 140 0" stroke-width="4" stroke-dasharray="20 10"/>
+      <path d="M64 690 L466 528" stroke-width="6" stroke-dasharray="3 13"/>
+    </g>
+
+    <g fill="#0f3355">
+      <circle cx="250" cy="150" r="11"/>
+      <circle cx="466" cy="628" r="7"/>
+      <circle cx="432" cy="690" r="15"/>
+      <circle cx="404" cy="734" r="9"/>
+      <circle cx="378" cy="768" r="5"/>
+      <circle cx="540" cy="470" r="10"/>
+    </g>
+
+    <g fill="none" stroke="#1f7a6e" stroke-width="5">
+      <path d="M100 620 v-58 h74 v58"/>
+      <path d="M140 762 h150"/>
+    </g>
+
+    <g stroke="#0f3355" stroke-width="4" fill="#dfe0c8">
+      <path d="M204 520 a108 96 0 0 1 216 0 z"/>
+      <path d="M262 520 q50 -34 100 0" fill="none"/>
+      <rect x="286" y="466" width="52" height="54" rx="3" fill="#0f3355"/>
+      <path d="M204 520 h216 v34 h-216 z"/>
+      <path d="M214 554 h52 l-14 44 h-38 z"/>
+      <path d="M296 554 h40 l10 44 h-40 z"/>
+      <path d="M370 554 h40 l14 44 h-40 z"/>
+    </g>
+
+    <g stroke="#0f3355" stroke-width="5" stroke-linecap="round" fill="none">
+      <path d="M220 452 l-30 -54"/>
+      <path d="M252 432 l-16 -62"/>
+      <path d="M336 432 l18 -60"/>
+      <path d="M368 452 l34 -50"/>
+      <path d="M204 504 l-46 -22"/>
+      <path d="M420 500 l48 -18"/>
+    </g>
+
+    <g fill="#0f3355" font-family="Verdana, Geneva, sans-serif" font-weight="700">
+      <text x="60" y="128" font-size="54" letter-spacing="3">BUNKER</text>
+      <text x="392" y="170" font-size="26" letter-spacing="8" font-family="Georgia, 'Times New Roman', serif">BERDURI</text>
+      <text x="536" y="796" font-size="26" text-anchor="end" letter-spacing="2">BASE</text>
+    </g>
+
+    <g fill="#1f7a6e">
+      <rect x="500" y="96" width="36" height="10"/>
+      <rect x="500" y="118" width="60" height="10"/>
+      <rect x="500" y="140" width="22" height="5"/>
+    </g>
+
+    <g fill="none" stroke="#0f3355" stroke-width="3">
+      <rect x="60" y="742" width="124" height="52" rx="6"/>
+    </g>
+    <text x="122" y="776" text-anchor="middle" font-family="Verdana, Geneva, sans-serif" font-size="22" font-weight="700" fill="#0f3355">B-02</text>
+    <circle cx="96" cy="720" r="9" fill="#0f3355"/>
+    <circle cx="130" cy="720" r="9" fill="#0f3355"/>
+  </g>
+
+  <rect x="14" y="14" width="572" height="822" fill="none" stroke="#0f3355" stroke-width="12"/>
+  <rect x="34" y="34" width="532" height="782" fill="none" stroke="#1f7a6e" stroke-width="4"/>
+  <path d="M586 14 L510 14 M586 14 L586 90" stroke="#0f3355" stroke-width="4"/>
+  <path d="M14 836 L90 836 M14 836 L14 760" stroke="#1f7a6e" stroke-width="4"/>
+</svg>

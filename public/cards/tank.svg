@@ -1,0 +1,96 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" width="600" height="850" viewBox="0 0 600 850" role="img" aria-labelledby="titleTank">
+  <title id="titleTank">Kartu Tank Pasir - peran artileri - penanda 4</title>
+  <defs>
+    <clipPath id="innerTank"><rect x="34" y="34" width="532" height="782" rx="14"/></clipPath>
+    <pattern id="dotsTank" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="1.6" fill="#8f1f1f" fill-opacity="0.25"/>
+    </pattern>
+  </defs>
+
+  <rect x="0" y="0" width="600" height="850" fill="#fbeadb"/>
+
+  <g clip-path="url(#innerTank)">
+    <rect x="34" y="34" width="532" height="782" fill="#f7ddc0"/>
+    <rect x="34" y="34" width="532" height="782" fill="url(#dotsTank)"/>
+
+    <g fill="none" stroke="#c15a12" stroke-opacity="0.6">
+      <path d="M84 250 a120 120 0 0 1 240 0" stroke-width="7"/>
+      <path d="M112 250 a92 92 0 0 1 184 0" stroke-width="3" stroke-dasharray="4 10"/>
+      <path d="M140 250 a64 64 0 0 1 128 0" stroke-width="11" stroke-dasharray="22 14"/>
+      <path d="M84 250 h240" stroke-width="3"/>
+      <path d="M470 118 L564 212 L470 306 L396 212 Z" stroke-width="6"/>
+      <path d="M470 154 L528 212 L470 270 L412 212 Z" stroke-width="3" stroke-dasharray="9 6"/>
+      <path d="M60 660 L300 560" stroke-width="7"/>
+      <path d="M60 700 L300 600" stroke-width="3" stroke-dasharray="6 8"/>
+      <path d="M60 740 L300 640" stroke-width="12" stroke-dasharray="3 18"/>
+      <path d="M330 738 q100 20 190 -40" stroke-width="5"/>
+      <path d="M330 706 q100 20 190 -40" stroke-width="9" stroke-dasharray="26 13"/>
+      <path d="M340 130 h80 v60 h-80 z" stroke-width="5"/>
+      <path d="M340 160 h80" stroke-width="2" stroke-dasharray="7 5"/>
+      <path d="M470 460 v130" stroke-width="4" stroke-dasharray="14 8"/>
+    </g>
+
+    <g fill="#c15a12">
+      <circle cx="204" cy="250" r="11"/>
+      <circle cx="564" cy="212" r="16"/>
+      <circle cx="470" cy="306" r="9"/>
+      <circle cx="96" cy="470" r="13"/>
+      <circle cx="140" cy="470" r="13"/>
+      <circle cx="184" cy="470" r="13"/>
+      <circle cx="228" cy="470" r="13"/>
+      <circle cx="272" cy="470" r="13"/>
+    </g>
+
+    <g fill="none" stroke="#8f1f1f" stroke-width="6">
+      <path d="M480 570 h56 v-46"/>
+      <path d="M480 626 h56"/>
+      <circle cx="510" cy="666" r="18"/>
+    </g>
+
+    <g stroke="#c15a12" stroke-width="4" fill="#f8e2c6">
+      <rect x="132" y="588" width="316" height="42" rx="6" fill="#8f1f1f"/>
+      <rect x="156" y="500" width="268" height="96" rx="8"/>
+      <rect x="196" y="452" width="188" height="56" rx="8"/>
+      <rect x="272" y="412" width="36" height="52" rx="5" fill="#8f1f1f"/>
+      <path d="M244 500 h92 v40 h-92 z" fill="#8f1f1f"/>
+      <rect x="120" y="630" width="340" height="76" rx="34"/>
+      <circle cx="172" cy="668" r="22" fill="#c15a12"/>
+      <circle cx="238" cy="668" r="22" fill="#c15a12"/>
+      <circle cx="304" cy="668" r="22" fill="#c15a12"/>
+      <circle cx="370" cy="668" r="22" fill="#c15a12"/>
+      <circle cx="424" cy="668" r="22" fill="#c15a12"/>
+      <path d="M308 452 v-70 h36 v70 z"/>
+      <path d="M344 404 h34 v26 h-34 z" fill="#8f1f1f"/>
+      <path d="M378 404 h132 v20 h-132 z" fill="#f8e2c6"/>
+      <path d="M490 398 h30 v34 h-30 z" fill="#8f1f1f"/>
+    </g>
+
+    <g fill="#c15a12" font-family="Georgia, 'Times New Roman', serif" font-weight="700">
+      <text x="60" y="126" font-size="62" letter-spacing="6">TANK</text>
+      <text x="536" y="404" font-size="20" text-anchor="end" letter-spacing="6" font-family="Verdana, Geneva, sans-serif">PASIR</text>
+      <text x="536" y="792" font-size="28" text-anchor="end" letter-spacing="4" font-family="Verdana, Geneva, sans-serif">ARTILERI</text>
+    </g>
+
+    <g fill="#8f1f1f">
+      <rect x="60" y="782" width="16" height="16" transform="rotate(45 68 790)"/>
+      <rect x="90" y="782" width="16" height="16" transform="rotate(45 98 790)"/>
+      <rect x="120" y="782" width="16" height="16" transform="rotate(45 128 790)"/>
+    </g>
+
+    <g fill="none" stroke="#8f1f1f" stroke-width="3">
+      <rect x="352" y="742" width="112" height="52" rx="6"/>
+    </g>
+    <text x="408" y="776" text-anchor="middle" font-family="Verdana, Geneva, sans-serif" font-size="22" font-weight="700" fill="#8f1f1f">A-04</text>
+    <g fill="#8f1f1f">
+      <circle cx="372" cy="716" r="9"/>
+      <circle cx="408" cy="716" r="9"/>
+      <circle cx="444" cy="716" r="9"/>
+      <circle cx="480" cy="716" r="9"/>
+    </g>
+  </g>
+
+  <rect x="14" y="14" width="572" height="822" fill="none" stroke="#c15a12" stroke-width="12"/>
+  <rect x="34" y="34" width="532" height="782" fill="none" stroke="#8f1f1f" stroke-width="4"/>
+  <path d="M586 14 L510 14 M586 14 L586 90" stroke="#8f1f1f" stroke-width="4"/>
+  <path d="M586 836 L510 836 M586 836 L586 760" stroke="#c15a12" stroke-width="4"/>
+</svg>

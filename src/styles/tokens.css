@@ -1,0 +1,36 @@
+﻿:root {
+  --color-bg: #6ebed1;
+  --color-sand: #e2c994;
+  --color-sand-dark: #c7bc94;
+  --color-ink: #31281e;
+  --color-muted: #705c43;
+  --color-accent: #238d88;
+  --color-accent-ink: #16676c;
+  --color-blue: #176db2;
+  --color-red: #bd4b3c;
+  --color-panel: #fff6e8e8;
+  --color-panel-solid: #fff6e8;
+  --color-shadow: #67482026;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --shadow-panel: 0 12px 30px var(--color-shadow);
+  --font-display: "Baloo 2", sans-serif;
+  --font-body: Inter, sans-serif;
+  --safe-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  --safe-top: max(var(--space-3), env(safe-area-inset-top));
+}
+
+/*
+ * Single source of truth for hiding elements. No other rule in this project may
+ * set `display` on an element that uses the `hidden` attribute, because a
+ * component rule such as `.panel { display: flex }` would otherwise silently
+ * defeat `hidden`.
+ */
+[hidden] { display: none !important; }
