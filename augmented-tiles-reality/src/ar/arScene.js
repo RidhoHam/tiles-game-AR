@@ -172,7 +172,7 @@ export class ARScene {
       powerPreference: 'high-performance'
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
     this.renderer.xr.enabled = true;
 
     if (this.container) {
@@ -1113,6 +1113,7 @@ export class ARScene {
       if (note.spawned || note.played || note.missed) continue;
 
       const timeUntilHit = note.timeSec - currentTimeSec;
+      if (timeUntilHit > this.travelDurationSec + 0.6) break;
       if (timeUntilHit <= this.travelDurationSec && timeUntilHit >= -0.1) {
         note.spawned = true;
         const tile = this.tilePool.acquire(note);

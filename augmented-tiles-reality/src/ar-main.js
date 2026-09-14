@@ -415,6 +415,7 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
       const GAME_MODE_LABELS = {
         play: 'Interactive',
+        free: 'Free Play',
         auto: 'Auto-Play',
         wait_chord: 'Stop Chord',
         wait_all: 'Stop All'
@@ -445,11 +446,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
       btnHudGameMode?.addEventListener('click', (e) => {
         e.preventDefault();
-        const modes = ['play', 'auto', 'wait_chord', 'wait_all'];
+        const modes = ['play', 'free', 'auto', 'wait_chord', 'wait_all'];
         const nextIdx = (modes.indexOf(currentGameMode) + 1) % modes.length;
         const nextMode = modes[nextIdx];
         setGameMode(nextMode);
-        showToast(`Game Mode: ${GAME_MODE_LABELS[nextMode]}`);
+        showToast(`Mode: ${GAME_MODE_LABELS[nextMode]}`);
       });
 
       // Finger Tracking Mode Switcher (2 Fingers vs All Fingers)
@@ -665,6 +666,31 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         arUI.showCountdown(3, () => startSongGameplay());
       });
 
+      // Free Play Quick Start Button (Directly launch open piano arena)
+      const btnStartFreePlay = document.getElementById('btn-start-free-play');
+      btnStartFreePlay?.addEventListener('click', async (e) => {
+        e?.preventDefault?.();
+        try {
+          if (soundEngine.initAudio) soundEngine.initAudio();
+          else if (soundEngine.init) await soundEngine.init();
+        } catch (err) {
+          console.warn('Audio init error:', err);
+        }
+        setGameMode('free');
+        setViewMode('roll');
+        currentChart = {
+          title: 'Mode Bebas (Free Play)',
+          durationSec: 999999,
+          notes: []
+        };
+        arScene.confirmPlacement();
+        document.getElementById('song-modal')?.classList.add('hidden');
+        hitDetector.arenaWidth = arScene.arenaWidth;
+        arScene.setLaneCount(14);
+        arUI.stateMachine.transition(UI_STATES.COUNTDOWN);
+        arUI.showCountdown(1, () => startSongGameplay());
+      });
+
       // Start Calibration Button
       const btnStartCalib = document.getElementById('btn-start-calibration');
       btnStartCalib?.addEventListener('click', () => {
@@ -877,7 +903,19 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
     }
 
     function startSongGameplay() {
-      if (!currentChart) prepareSongChart();
+      if (currentGameMode === 'free') {
+        currentChart = {
+          title: 'Mode Bebas (Free Play)',
+          durationSec: 999999,
+          notes: []
+        };
+        const titleEl = document.getElementById('hud-song-title');
+        if (titleEl) titleEl.innerText = '🎹 Mode Bebas (Free Play)';
+        const timeEl = document.getElementById('hud-song-time');
+        if (timeEl) timeEl.innerText = 'Bebas';
+      } else {
+        if (!currentChart) prepareSongChart();
+      }
       arUI.scoreManager.reset();
       arUI.updateScore(0, 0, 100);
 
@@ -961,6 +999,42 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         }
 
         if (isPlaying && currentChart) {
+          if (currentGameMode === 'free') {
+            let tappedLane = -1;
+            if (persistedCanvasCorners) {
+              tappedLane = getLaneFromScreenPoint({ x, y }, persistedCanvasCorners, arScene.viewMode === 'roll' ? 14 : selectedLanes);
+            }
+            if (tappedLane < 0) {
+              const normX = x / rect.width;
+              tappedLane = Math.min(selectedLanes - 1, Math.max(0, Math.floor(normX * selectedLanes)));
+            }
+
+            let targetKey = tappedLane;
+            let notePitch = 60;
+            const solfegeNames = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si', 'Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
+            let solfegeLabel = '♪';
+
+            if (arScene.viewMode === 'roll') {
+              if (tappedLane >= 0 && tappedLane < 14) {
+                targetKey = WHITE_KEY_MIDIS[tappedLane];
+                notePitch = targetKey;
+                solfegeLabel = solfegeNames[tappedLane];
+              }
+            } else {
+              const scaleMidis = [60, 62, 64, 65, 67, 69, 71, 72];
+              targetKey = tappedLane;
+              notePitch = scaleMidis[tappedLane % scaleMidis.length];
+              solfegeLabel = solfegeNames[tappedLane % solfegeNames.length];
+            }
+
+            soundEngine.playNote(notePitch, 0.6);
+            arScene.triggerKeyDepress(targetKey);
+            triggerKeyHitAnimation(targetKey, 'PERFECT', false);
+            arScene.triggerHitVFX(targetKey, 'PERFECT');
+            arUI.showJudgement(solfegeLabel, 100);
+            return;
+          }
+
           const normX = x / rect.width;
           const tappedLane = Math.min(selectedLanes - 1, Math.max(0, Math.floor(normX * selectedLanes)));
           arScene.triggerKeyDepress(tappedLane);
@@ -2020,6 +2094,10 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
         if (chart && Array.isArray(chart.notes)) {
           for (const note of chart.notes) {
             const timeUntilHit = note.timeSec - currentTimeSec;
+            // Early break: chart.notes is chronologically sorted, so future notes can be skipped entirely
+            if (timeUntilHit > travelDuration + 0.6) break;
+            if (timeUntilHit < -1.5) continue;
+
             const progress = 1.0 - (timeUntilHit / travelDuration); // 0 at spawn outside, 1 at Hit Line
 
             const noteT = isUp ? (1.0 + 2.2 * (1.0 - progress)) : (-3.0 * (1.0 - progress));
@@ -2095,8 +2173,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 ctx.fillStyle = grad;
                 ctx.strokeStyle = isChord ? '#facc15' : (isBlack ? '#38bdf8' : '#ffffff');
                 ctx.lineWidth = isChord ? 2.5 : (isBlack ? 2.2 : 1.8);
-                ctx.shadowColor = isChord ? '#facc15' : (isBlack ? '#38bdf8' : 'rgba(255, 255, 255, 0.45)');
-                ctx.shadowBlur = isChord ? 16 : (isBlack ? 12 : 8);
+                // Zero shadowBlur to eliminate CPU Gaussian convolution during 60 FPS gameplay
+                ctx.shadowBlur = 0;
 
                 ctx.beginPath();
                 ctx.moveTo(cFL.x, cFL.y);
@@ -2214,14 +2292,14 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 keyGrad.addColorStop(1, `rgba(14, 165, 233, ${0.75 * hp + 0.25})`);
               }
               ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
-              ctx.shadowBlur = 14 * hp;
+              ctx.shadowBlur = 0;
             } else if (isHover) {
               // Real-time hover illumination when camera sees player's finger above key (cyan/yellow)
               keyGrad.addColorStop(0, 'rgba(254, 240, 138, 0.96)');
               keyGrad.addColorStop(0.5, 'rgba(186, 230, 253, 0.92)');
               keyGrad.addColorStop(1, 'rgba(6, 182, 212, 0.55)');
               ctx.shadowColor = '#06b6d4';
-              ctx.shadowBlur = 14;
+              ctx.shadowBlur = 0;
             } else {
               keyGrad.addColorStop(0, 'rgba(255, 255, 255, 0.88)');
               keyGrad.addColorStop(0.8, 'rgba(241, 245, 249, 0.82)');
@@ -2242,12 +2320,26 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             // Note pitch label near key tip
             const labelPt = getPerspectivePoint((u0 + u1) / 2, labelT);
             ctx.shadowBlur = 0;
-            ctx.fillStyle = isHover ? '#0284c7' : '#64748b';
-            ctx.font = 'bold 10px "Outfit", sans-serif';
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
             const whiteKeyNames = ['C3','D3','E3','F3','G3','A3','B3','C4','D4','E4','F4','G4','A4','B4'];
-            ctx.fillText(whiteKeyNames[k] || '', labelPt.x, labelPt.y);
+            const solfegeNames = ['Do','Re','Mi','Fa','Sol','La','Si','Do','Re','Mi','Fa','Sol','La','Si'];
+
+            if (currentGameMode === 'free') {
+              ctx.fillStyle = isHover ? '#0284c7' : '#f8fafc';
+              ctx.font = 'bold 11px "Outfit", sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(solfegeNames[k] || '', labelPt.x, labelPt.y - 6);
+
+              ctx.fillStyle = isHover ? '#0369a1' : '#94a3b8';
+              ctx.font = '9px "JetBrains Mono", monospace';
+              ctx.fillText(whiteKeyNames[k] || '', labelPt.x, labelPt.y + 7);
+            } else {
+              ctx.fillStyle = isHover ? '#0284c7' : '#64748b';
+              ctx.font = 'bold 10px "Outfit", sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(whiteKeyNames[k] || '', labelPt.x, labelPt.y);
+            }
             ctx.restore();
           }
 
@@ -2275,13 +2367,13 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
                 ctx.fillStyle = hitAnim.isChord ? '#78350f' : '#0369a1';
                 ctx.strokeStyle = hitAnim.isChord ? '#facc15' : '#38bdf8';
                 ctx.shadowColor = hitAnim.isChord ? '#facc15' : '#38bdf8';
-                ctx.shadowBlur = 10 * (1 - hitAnim.progress);
+                ctx.shadowBlur = 0;
                 ctx.lineWidth = 2.0;
               } else if (isHover) {
                 ctx.fillStyle = '#0e2338';
                 ctx.strokeStyle = '#06b6d4';
                 ctx.shadowColor = '#06b6d4';
-                ctx.shadowBlur = 8;
+                ctx.shadowBlur = 0;
                 ctx.lineWidth = 2.0;
               } else {
                 ctx.fillStyle = 'rgba(9, 13, 22, 0.88)';
@@ -2916,7 +3008,8 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
       let lastTime = performance.now();
       let lastVisionTimestamp = 0;
       let cachedHands = [];
-      const VISION_THROTTLE_MS = 33; // Smooth 30 FPS vision tracking with 60 FPS interpolated rendering
+      const VISION_THROTTLE_MS = 55; // Fluid ~18 FPS vision tracking with smooth 60 FPS interpolated rendering
+      let isVisionBusy = false;
       let frameCount = 0;
       let lastFpsTime = performance.now();
       let lastThumbSlamTime = 0;
@@ -2948,10 +3041,16 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
         const currentState = arUI.stateMachine.getState();
 
-        // 1. Vision Hand Tracking (Throttled to ~30 FPS to eliminate main thread stutter)
-        if (handTracker && arScene.videoElement && (timestamp - lastVisionTimestamp >= VISION_THROTTLE_MS)) {
-          cachedHands = handTracker.detectForVideo(arScene.videoElement, timestamp);
-          lastVisionTimestamp = timestamp;
+        // 1. Vision Hand Tracking (Throttled to ~18 FPS with non-blocking post-timestamp to prevent 60 FPS stutter)
+        const currentPerfNow = performance.now();
+        if (handTracker && arScene.videoElement && (currentPerfNow - lastVisionTimestamp >= VISION_THROTTLE_MS) && !isVisionBusy) {
+          isVisionBusy = true;
+          try {
+            cachedHands = handTracker.detectForVideo(arScene.videoElement, currentPerfNow);
+          } finally {
+            lastVisionTimestamp = performance.now();
+            isVisionBusy = false;
+          }
         }
 
         // Smooth fingertip updates on every 60 FPS frame
@@ -3150,7 +3249,33 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
             currentTimeSec
           );
 
-          if (currentGameMode !== 'auto') {
+          if (currentGameMode === 'free') {
+            const solfegeNames = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si', 'Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
+            for (const press of pressEvents) {
+              let targetKey = press.lane;
+              let notePitch = 60;
+              let solfegeLabel = '♪';
+
+              if (arScene.viewMode === 'roll') {
+                if (typeof press.lane === 'number' && press.lane >= 0 && press.lane < 14) {
+                  targetKey = WHITE_KEY_MIDIS[press.lane];
+                  notePitch = targetKey;
+                  solfegeLabel = solfegeNames[press.lane] || '♪';
+                }
+              } else {
+                const scaleMidis = [60, 62, 64, 65, 67, 69, 71, 72];
+                targetKey = press.lane;
+                notePitch = scaleMidis[press.lane % scaleMidis.length];
+                solfegeLabel = solfegeNames[press.lane % solfegeNames.length] || '♪';
+              }
+
+              soundEngine.playNote(notePitch, 0.6);
+              arScene.triggerKeyDepress(targetKey);
+              triggerKeyHitAnimation(targetKey, 'PERFECT', false);
+              arScene.triggerHitVFX(targetKey, 'PERFECT');
+              arUI.showJudgement(solfegeLabel, 100);
+            }
+          } else if (currentGameMode !== 'auto') {
             for (const press of pressEvents) {
               let targetKey = press.lane;
               if (arScene.viewMode === 'roll') {
@@ -3221,111 +3346,117 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.m
 
         // 2. Gameplay state updates
         if (currentState === UI_STATES.PLAYING && isPlaying && currentChart) {
-          // Check waiting modes: Stop Chord (wait_chord) & Stop All (wait_all)
-          isWaitingForHit = false;
-          const tentativeTimeSec = (timestamp / 1000) - songStartTimeSec;
-
-          if (currentGameMode === 'wait_chord') {
-            const unhitChord = currentChart.notes.find(n => {
-              if (n.missed) return false;
-              const isChord = Boolean(
-                (Array.isArray(n.notes) && n.notes.length >= 2) ||
-                (Array.isArray(n.chordGroup) && n.chordGroup.length >= 2) ||
-                (n.type === 'chord' || n.isChord)
-              );
-              if (!isChord) return false;
-
-              // Stay waiting as long as ANY note/subnote of the chord is unplayed
-              return !isChordFullyPlayed(n, currentChart.notes) && tentativeTimeSec >= (n.timeSec - 0.02);
-            });
-
-            if (unhitChord) {
-              isWaitingForHit = true;
-              songStartTimeSec += dt; // freeze song clock until EVERY note of chord is played!
-            }
-          } else if (currentGameMode === 'wait_all') {
-            const unhitNote = currentChart.notes.find(n =>
-              !isChordFullyPlayed(n, currentChart.notes) && tentativeTimeSec >= (n.timeSec - 0.02)
-            );
-            if (unhitNote) {
-              isWaitingForHit = true;
-              songStartTimeSec += dt; // freeze song clock until note is played
-            }
-          }
-
-          const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
-
-          if (currentGameMode === 'auto') {
-            // Auto-Play: Notes hit automatically at Hit Line with synchronized audio & visuals
-            if (Array.isArray(currentChart.notes)) {
-              for (const note of currentChart.notes) {
-                if (!note.played && currentTimeSec >= (note.timeSec - 0.03)) {
-                  note.played = true;
-                  note.playedSound = true;
-                  const midiOrNote = note.midi ?? note.note;
-                  if (midiOrNote != null) {
-                    soundEngine.playNote(midiOrNote, note.durationSec || 0.45, note.velocity ? Math.max(0.65, note.velocity) : 0.8);
-                  }
-                  const isChord = Boolean(note.type === 'chord' || note.isChord);
-                  const laneOrMidi = (currentViewMode === 'roll' && note.midi) ? note.midi : (note.lane ?? 0);
-                  triggerKeyHitAnimation(laneOrMidi, 'PERFECT', isChord);
-                  arScene.triggerHitVFX(laneOrMidi, 'PERFECT');
-
-                  const scoreRes = arUI.scoreManager.recordHit('PERFECT', { isChord });
-                  arUI.showJudgement('PERFECT', scoreRes.points);
-                  arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
-                  arScene.setSpatialCombo(arUI.scoreManager.combo, 'PERFECT');
-                  arScene.worldReaction.setCombo(arUI.scoreManager.combo);
-                  lastHitJudgement = 'PERFECT';
-                }
-              }
-            }
+          if (currentGameMode === 'free') {
+            arUI.updateTimeline(0, 0);
           } else {
-            // Interactive, Stop Chord, and Stop All modes:
-            if (Array.isArray(currentChart.notes)) {
-              for (const note of currentChart.notes) {
-                if (!note.playedSound && currentTimeSec >= note.timeSec) {
-                  const isChord = Boolean(
-                    note.type === 'chord' || note.isChord ||
-                    (Array.isArray(note.notes) && note.notes.length >= 2) ||
-                    (Array.isArray(note.chordGroup) && note.chordGroup.length >= 2)
-                  );
-                  if (currentGameMode === 'wait_chord' && isChord) continue;
-                  if (currentGameMode === 'wait_all') continue;
+            // Check waiting modes: Stop Chord (wait_chord) & Stop All (wait_all)
+            isWaitingForHit = false;
+            const tentativeTimeSec = (timestamp / 1000) - songStartTimeSec;
 
-                  note.playedSound = true;
-                  const midiOrNote = note.midi ?? note.note;
-                  if (midiOrNote != null) {
-                    soundEngine.playNote(midiOrNote, note.durationSec || 0.45, note.velocity ? Math.max(0.65, note.velocity) : 0.8);
+            if (currentGameMode === 'wait_chord') {
+              const unhitChord = currentChart.notes.find(n => {
+                if (n.missed) return false;
+                const isChord = Boolean(
+                  (Array.isArray(n.notes) && n.notes.length >= 2) ||
+                  (Array.isArray(n.chordGroup) && n.chordGroup.length >= 2) ||
+                  (n.type === 'chord' || n.isChord)
+                );
+                if (!isChord) return false;
+
+                // Stay waiting as long as ANY note/subnote of the chord is unplayed
+                return !isChordFullyPlayed(n, currentChart.notes) && tentativeTimeSec >= (n.timeSec - 0.02);
+              });
+
+              if (unhitChord) {
+                isWaitingForHit = true;
+                songStartTimeSec += dt; // freeze song clock until EVERY note of chord is played!
+              }
+            } else if (currentGameMode === 'wait_all') {
+              const unhitNote = currentChart.notes.find(n =>
+                !isChordFullyPlayed(n, currentChart.notes) && tentativeTimeSec >= (n.timeSec - 0.02)
+              );
+              if (unhitNote) {
+                isWaitingForHit = true;
+                songStartTimeSec += dt; // freeze song clock until note is played
+              }
+            }
+
+            const currentTimeSec = (timestamp / 1000) - songStartTimeSec;
+
+            if (currentGameMode === 'auto') {
+              // Auto-Play: Notes hit automatically at Hit Line with synchronized audio & visuals
+              if (Array.isArray(currentChart.notes)) {
+                for (const note of currentChart.notes) {
+                  if (note.timeSec > currentTimeSec + 0.1) break;
+                  if (!note.played && currentTimeSec >= (note.timeSec - 0.03)) {
+                    note.played = true;
+                    note.playedSound = true;
+                    const midiOrNote = note.midi ?? note.note;
+                    if (midiOrNote != null) {
+                      soundEngine.playNote(midiOrNote, note.durationSec || 0.45, note.velocity ? Math.max(0.65, note.velocity) : 0.8);
+                    }
+                    const isChord = Boolean(note.type === 'chord' || note.isChord);
+                    const laneOrMidi = (currentViewMode === 'roll' && note.midi) ? note.midi : (note.lane ?? 0);
+                    triggerKeyHitAnimation(laneOrMidi, 'PERFECT', isChord);
+                    arScene.triggerHitVFX(laneOrMidi, 'PERFECT');
+
+                    const scoreRes = arUI.scoreManager.recordHit('PERFECT', { isChord });
+                    arUI.showJudgement('PERFECT', scoreRes.points);
+                    arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
+                    arScene.setSpatialCombo(arUI.scoreManager.combo, 'PERFECT');
+                    arScene.worldReaction.setCombo(arUI.scoreManager.combo);
+                    lastHitJudgement = 'PERFECT';
                   }
-                  const laneOrMidi = (currentViewMode === 'roll' && note.midi) ? note.midi : (note.lane ?? 0);
-                  triggerKeyHitAnimation(laneOrMidi, 'PERFECT', isChord);
+                }
+              }
+            } else {
+              // Interactive, Stop Chord, and Stop All modes:
+              if (Array.isArray(currentChart.notes)) {
+                for (const note of currentChart.notes) {
+                  if (note.timeSec > currentTimeSec + 0.1) break;
+                  if (!note.playedSound && currentTimeSec >= note.timeSec) {
+                    const isChord = Boolean(
+                      note.type === 'chord' || note.isChord ||
+                      (Array.isArray(note.notes) && note.notes.length >= 2) ||
+                      (Array.isArray(note.chordGroup) && note.chordGroup.length >= 2)
+                    );
+                    if (currentGameMode === 'wait_chord' && isChord) continue;
+                    if (currentGameMode === 'wait_all') continue;
+
+                    note.playedSound = true;
+                    const midiOrNote = note.midi ?? note.note;
+                    if (midiOrNote != null) {
+                      soundEngine.playNote(midiOrNote, note.durationSec || 0.45, note.velocity ? Math.max(0.65, note.velocity) : 0.8);
+                    }
+                    const laneOrMidi = (currentViewMode === 'roll' && note.midi) ? note.midi : (note.lane ?? 0);
+                    triggerKeyHitAnimation(laneOrMidi, 'PERFECT', isChord);
+                  }
+                }
+              }
+
+              // Only check missed notes in pure interactive 'play' mode (NOT in wait modes)
+              if (currentGameMode === 'play') {
+                const missedNotes = hitDetector.checkMissedNotes(currentTimeSec, currentChart.notes);
+                for (const m of missedNotes) {
+                  arUI.scoreManager.recordHit('MISS');
+                  arUI.showJudgement('MISS', 0);
+                  arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
+                  arScene.setSpatialCombo(0, 'MISS');
+                  arScene.worldReaction.setCombo(0);
+                  lastHitJudgement = 'MISS';
                 }
               }
             }
 
-            // Only check missed notes in pure interactive 'play' mode (NOT in wait modes)
-            if (currentGameMode === 'play') {
-              const missedNotes = hitDetector.checkMissedNotes(currentTimeSec, currentChart.notes);
-              for (const m of missedNotes) {
-                arUI.scoreManager.recordHit('MISS');
-                arUI.showJudgement('MISS', 0);
-                arUI.updateScore(arUI.scoreManager.score, arUI.scoreManager.combo, arUI.scoreManager.accuracy);
-                arScene.setSpatialCombo(0, 'MISS');
-                arScene.worldReaction.setCombo(0);
-                lastHitJudgement = 'MISS';
-              }
+            // Spawn notes & update scene
+            arScene.spawnNotes(currentChart.notes, currentTimeSec);
+            arUI.updateTimeline(currentTimeSec, currentChart.durationSec);
+
+            // Check for song completion
+            if (currentTimeSec >= currentChart.durationSec + 0.8) {
+              isPlaying = false;
+              arUI.showResult(arUI.scoreManager.getSummary());
             }
-          }
-
-          // Spawn notes & update scene
-          arScene.spawnNotes(currentChart.notes, currentTimeSec);
-          arUI.updateTimeline(currentTimeSec, currentChart.durationSec);
-
-          // Check for song completion
-          if (currentTimeSec >= currentChart.durationSec + 0.8) {
-            isPlaying = false;
-            arUI.showResult(arUI.scoreManager.getSummary());
           }
         }
 

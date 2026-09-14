@@ -497,9 +497,27 @@ export class HandTracker {
     const validTimestamp = Math.max(now, (this.lastVideoTimestamp || 0) + 1);
     this.lastVideoTimestamp = validTimestamp;
 
+    // Downscale input frame to 360x202 for ultra-fast WASM inference without losing landmark quality
+    let inputSource = videoElement;
+    if (typeof document !== 'undefined' && videoElement && videoElement.videoWidth && videoElement.videoWidth > 400) {
+      if (!this._downscaleCanvas) {
+        this._downscaleCanvas = document.createElement('canvas');
+        this._downscaleCanvas.width = 360;
+        this._downscaleCanvas.height = 202;
+        this._downscaleCtx = this._downscaleCanvas.getContext('2d', { willReadFrequently: true });
+        if (this._downscaleCtx) {
+          this._downscaleCtx.imageSmoothingEnabled = false;
+        }
+      }
+      if (this._downscaleCtx) {
+        this._downscaleCtx.drawImage(videoElement, 0, 0, 360, 202);
+        inputSource = this._downscaleCanvas;
+      }
+    }
+
     let result;
     try {
-      result = this.handLandmarker.detectForVideo(videoElement, validTimestamp);
+      result = this.handLandmarker.detectForVideo(inputSource, validTimestamp);
     } catch (err) {
       console.warn('[HandTracker] detectForVideo execution error:', err);
       this.currentHands = [];
