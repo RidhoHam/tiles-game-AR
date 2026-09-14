@@ -1,4 +1,4 @@
-﻿/* Thin placement-guide lines that overlay the live webcam feed. */
+/* Thin placement-guide lines that overlay the live webcam feed. */
 import * as THREE from 'three';
 import { guideLineX } from './arena-mesh.js';
 
@@ -45,11 +45,12 @@ export class GuideLines {
   show(arena) {
     if (this._disposed) return;
     const [left, center, right] = guideLineX(arena);
+    const y = (Number.isFinite(arena?.centerY) ? arena.centerY : 0) + LINE_LIFT;
     const z = Number.isFinite(arena?.centerZ) ? arena.centerZ : 0;
     const xs = [left, center, right];
     for (let i = 0; i < this.lines.length; i++) {
       const line = this.lines[i];
-      line.position.set(xs[i], LINE_LIFT, z);
+      line.position.set(xs[i], y, z);
       line.scale.set(LINE_THICKNESS, 1, GUIDE_LENGTH);
       line.visible = true;
       line.updateMatrix();

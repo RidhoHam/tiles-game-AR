@@ -1,4 +1,4 @@
-﻿import { classifySide } from './team-composition.js';
+import { classifySide } from './team-composition.js';
 
 export const DEFAULT_ARENA = Object.freeze({ halfWidth: 6, halfDepth: 4, cardScale: 0.32 });
 
@@ -15,7 +15,7 @@ const SCALE_MAX = 1.6;
 
 export function deriveArena(cards, options = {}) {
   const fallback = {
-    centerX: 0, centerZ: 0,
+    centerX: 0, centerY: 0, centerZ: 0,
     width: DEFAULT_ARENA.halfWidth * 2, depth: DEFAULT_ARENA.halfDepth * 2,
     scale: 1, blueAnchor: [-3, 0, 0], redAnchor: [3, 0, 0]
   };
@@ -30,12 +30,14 @@ export function deriveArena(cards, options = {}) {
   if (list.length === 0) return fallback;
 
   const xs = list.map(card => card.worldPosition[0]);
+  const ys = list.map(card => card.worldPosition[1]).filter(Number.isFinite);
   const zs = list.map(card => card.worldPosition[2]);
   const minX = Math.min(...xs);
   const maxX = Math.max(...xs);
   const minZ = Math.min(...zs);
   const maxZ = Math.max(...zs);
   const centerX = (minX + maxX) / 2;
+  const centerY = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
   const centerZ = (minZ + maxZ) / 2;
   const spanX = maxX - minX; // >= 0 and finite because every input is finite
   const spanZ = maxZ - minZ;
@@ -50,7 +52,7 @@ export function deriveArena(cards, options = {}) {
     : fallbackValue;
 
   return {
-    centerX, centerZ,
+    centerX, centerY, centerZ,
     width: spanX, depth: spanZ, scale,
     blueAnchor: [average(blue, 0, centerX), 0, centerZ],
     redAnchor: [average(red, 0, centerX), 0, centerZ]

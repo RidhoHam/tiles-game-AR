@@ -1,4 +1,4 @@
-﻿import { CARD_TARGETS } from '../../ar/card-targets.js';
+import { CARD_TARGETS } from '../../ar/card-targets.js';
 import { UNIT_DEFINITIONS, ROLES } from '../../core/unit-definitions.js';
 import { ROLE_REQUIREMENTS } from '../../core/team-composition.js';
 
@@ -28,7 +28,8 @@ export function createScreenScan(root, state, handlers = {}) {
   heading.textContent = 'Pindai Kartu';
 
   const hint = document.createElement('p');
-  hint.textContent = 'Arahkan kamera ke meja sampai keenam kartu terbaca. Tiga kartu di kiri, tiga di kanan.';
+  hint.className = 'screen-scan__hint';
+  hint.textContent = 'Arahkan kamera ke meja sampai kartu terbaca. Letakkan Tim Biru di sisi kiri dan Tim Merah di sisi kanan garis tengah (putar HP ke Landscape untuk area lebih leluasa).';
 
   // Layer 1: the always-visible count.
   const count = document.createElement('p');
@@ -139,13 +140,13 @@ export function createScreenScan(root, state, handlers = {}) {
     for (const role of ROLES) {
       const need = ROLE_REQUIREMENTS[role] ?? 1;
       const have = byRole.get(role);
-      if (have.length >= need) done.push(`${ROLE_LABEL[role]} (${have.join(', ')}) \u2713`);
+      if (have.length >= need) done.push(ROLE_LABEL[role]);
       else missing.push(`${need - have.length} ${ROLE_LABEL[role]}`);
     }
 
-    if (done.length === 0) return 'Belum ada kartu terdeteksi di sisi ini.';
-    if (missing.length === 0) return `${done.join(', ')} \u2014 lengkap!`;
-    return `${done.join(', ')} \u2014 butuh ${missing.join(' dan ')}.`;
+    if (done.length === 0) return 'Belum ada kartu di sisi ini.';
+    if (missing.length === 0) return `Lengkap: ${done.join(', ')} \u2713`;
+    return `Butuh ${missing.join(', ')}.`;
   }
 
   function update({ cards = [], errors = [], valid = false } = {}) {
@@ -194,11 +195,14 @@ export function createScreenScan(root, state, handlers = {}) {
     }));
 
     summary.textContent = valid
-      ? `Keenam kartu valid: ${found} terdeteksi. Tim Biru dan Tim Merah lengkap.`
+      ? (typeof countdown === 'number' && countdown > 0
+          ? `✅ Semua model siap terproyeksikan! Memulai pertempuran otomatis dalam ${countdown} detik...`
+          : `Model siap: ${found} kartu terproyeksikan. Tekan Mulai Battle atau tunggu hitung mundur otomatis.`)
       : `${found} dari ${rows.size} kartu terdeteksi. Perbaiki hal berikut sebelum bertempur:`;
     summary.dataset.valid = valid ? 'true' : 'false';
 
     startButton.disabled = !valid;
+    startButton.textContent = typeof countdown === 'number' && countdown > 0 ? `Mulai Battle (${countdown}s)` : 'Mulai Battle';
   }
 
   // First paint from whatever the controller already knows, so entering `scan`

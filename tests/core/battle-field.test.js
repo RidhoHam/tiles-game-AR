@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BattleField } from '../../src/core/battle-field.js';
 
@@ -227,3 +227,37 @@ test('isInRange is inclusive of the exact range boundary', () => {
   // kesatria range is exactly 1.1.
   assert.equal(field.isInRange(field.units.get('blue-k'), field.units.get('red-k')), true);
 });
+
+test('objectiveFor targets nearest living enemy unit rather than a distant base', () => {
+  const field = new BattleField({
+    units: [
+      unit('blue-k', 'prajurit', 'blue', 0, 0),
+      unit('red-k', 'prajurit', 'red', 1.5, 0.5),
+      unit('red-b', 'base', 'red', 8.0, 4.0)
+    ]
+  });
+  const blue = field.units.get('blue-k');
+  const objective = field.objectiveFor(blue);
+  assert.equal(objective.x, 1.5);
+  assert.equal(objective.z, 0.5);
+  assert.equal(objective.target.id, 'red-k');
+});
+
+test('advance moves toward nearby enemy and halts when target is in attack range', () => {
+  const field = new BattleField({
+    units: [
+      unit('blue-k', 'prajurit', 'blue', 0, 0),
+      unit('red-k', 'prajurit', 'red', 1.5, 0),
+      unit('red-b', 'base', 'red', 9.0, 0)
+    ]
+  });
+  const blue = field.units.get('blue-k');
+  // At t=0, distance is 1.5 (out of range 1.1).
+  assert.equal(field.targetFor(blue), null);
+  // Step forward with speed 2.2 for 0.25s -> step 0.55. Next position x = 0.55.
+  assert.equal(field.advance(blue, 0.25), true);
+  assert.ok(Math.abs(blue.position.x - 0.55) < 1e-4);
+  // Now distance is 1.5 - 0.55 = 0.95 <= 1.1. In range!
+  assert.equal(field.targetFor(blue).id, 'red-k');
+});
+

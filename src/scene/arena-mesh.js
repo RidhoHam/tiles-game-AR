@@ -1,4 +1,4 @@
-﻿/* Arena floor, centre line and boundary, sized from a calibrated arena. */
+/* Arena floor, centre line and boundary, sized from a calibrated arena. */
 import * as THREE from 'three';
 
 // Card geometry: the physical cards are marker targets about one "card row" wide
@@ -82,7 +82,7 @@ export class ArenaMesh {
     const planeGeometry = new THREE.PlaneGeometry(1, 1);
     planeGeometry.rotateX(-Math.PI / 2);
     const sandMaterial = new THREE.MeshStandardMaterial({
-      color: SAND_COLOR, roughness: 0.95, metalness: 0
+      color: SAND_COLOR, roughness: 0.95, metalness: 0, transparent: true, opacity: 0.15, depthWrite: false
     });
     this.floor = new THREE.Mesh(planeGeometry, sandMaterial);
     this.floor.name = 'arena-floor';
@@ -122,23 +122,24 @@ export class ArenaMesh {
     if (this._disposed) return;
     const { halfWidth, halfDepth } = sceneBoundsFromArena(arena);
     const centerX = finiteOr(arena?.centerX, 0);
+    const centerY = finiteOr(arena?.centerY, 0);
     const centerZ = finiteOr(arena?.centerZ, 0);
 
     const fullWidth = halfWidth * 2;
     const fullDepth = halfDepth * 2;
 
     this.floor.scale.set(fullWidth, 1, fullDepth);
-    this.floor.position.set(centerX, 0, centerZ);
+    this.floor.position.set(centerX, centerY, centerZ);
     this.floor.updateMatrix();
 
     const centerThickness = Math.max(0.04, Math.min(fullWidth, fullDepth) * 0.02);
     this.centerLine.scale.set(centerThickness, 1, fullDepth);
-    this.centerLine.position.set(centerX, 0.012, centerZ);
+    this.centerLine.position.set(centerX, centerY + 0.012, centerZ);
     this.centerLine.updateMatrix();
 
     // RingGeometry(inner = 0.5, outer = 1) at unit scale; scale to the arena box.
     this.boundary.scale.set(fullWidth, 1, fullDepth);
-    this.boundary.position.set(centerX, 0.006, centerZ);
+    this.boundary.position.set(centerX, centerY + 0.006, centerZ);
     this.boundary.updateMatrix();
   }
 

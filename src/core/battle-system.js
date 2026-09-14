@@ -1,4 +1,4 @@
-﻿// Role/range battle model. There is no summon and no reinforcement: each unit
+// Role/range battle model. There is no summon and no reinforcement: each unit
 // walks until an enemy is in range, then trades hits until one base falls.
 import { FACTIONS, UNIT_DEFINITIONS } from './unit-definitions.js';
 import { BattleField } from './battle-field.js';
@@ -90,10 +90,10 @@ export class BattleSystem {
     return true;
   }
 
-  /** True when both sides still have a base and at least one attacker. */
+  /** True when both sides still have surviving units and at least one attacker. */
   #canEndBattle() {
     for (const faction of FACTIONS) {
-      if (!this.#baseAlive(faction)) return false;
+      if (!this.#factionAlive(faction)) return false;
       const attackers = [...this.units.values()].filter(unit =>
         unit.alive && unit.faction === faction && this.#canFight(unit));
       if (attackers.length === 0) return false;
@@ -208,14 +208,19 @@ export class BattleSystem {
     this.#emit('destroy', { unitId: unit.id, reason });
   }
 
-  #baseAlive(faction) {
-    return [...this.units.values()].some(unit =>
-      unit.faction === faction && UNIT_DEFINITIONS[unit.type].role === 'base' && unit.alive);
+  #factionAlive(faction) {
+    const list = [...this.units.values()].filter(unit => unit.faction === faction && unit.alive);
+    if (list.length === 0) return false;
+    const hasBase = [...this.units.values()].some(unit => unit.faction === faction && UNIT_DEFINITIONS[unit.type]?.role === 'base');
+    if (hasBase) {
+      return [...this.units.values()].some(unit => unit.faction === faction && UNIT_DEFINITIONS[unit.type]?.role === 'base' && unit.alive);
+    }
+    return list.length > 0;
   }
 
   #checkWinner() {
     for (const faction of FACTIONS) {
-      if (!this.#baseAlive(faction)) {
+      if (!this.#factionAlive(faction)) {
         this.winner = faction === 'blue' ? 'red' : 'blue';
         this.state = 'finished';
         this.#emit('victory', { winner: this.winner });

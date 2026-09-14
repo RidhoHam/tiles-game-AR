@@ -1,4 +1,4 @@
-﻿# Perang Benteng Pasir AR (Kartu + Webcam)
+# Perang Benteng Pasir AR (Kartu + Webcam)
 
 Pertarungan pasir **augmented reality berbasis kartu** yang berjalan di **Chrome desktop
 dengan webcam**. Kamu mencetak **enam kartu**, meletakkan **tiga kartu di kiri** dan **tiga
@@ -18,45 +18,71 @@ bertempur di tengah meja.
 
 | Kebutuhan | Keterangan |
 | --- | --- |
-| Browser | **Chrome desktop** (versi terbaru). Browser mobile di luar lingkup rilis ini. |
-| Kamera | **Webcam** yang diarahkan ke meja. Bisa webcam bawaan laptop asalkan seluruh meja masuk bingkai. |
+| Browser | **Chrome Desktop** atau browser **Mobile (Chrome/Safari di HP)** melalui HTTPS Ngrok Tunnel. |
+| Kamera | **Webcam laptop/PC** atau **kamera belakang smartphone (rear camera)** yang diarahkan ke meja. |
 | Node.js + npm | Untuk menjalankan server pengembangan dan build. Node 20+ disarankan. |
-| Konteks aman | Akses kamera **hanya** diizinkan di *secure context*. `http://localhost` **termasuk** konteks aman, jadi `npm run dev` aman. **Alamat IP LAN biasa (mis. `http://192.168.1.5:5173`) BUKAN konteks aman** dan kamera akan diblokir. |
-| Kartu cetak | Enam kartu dari `public/cards/lembar-a4.svg`, dicetak di kertas A4. |
-| Berkas target | `public/cards/targets.mind` - **dibuat sendiri oleh pengguna** (lihat bagian 3). |
+| Konteks aman | Akses kamera **hanya** diizinkan di *secure context* (HTTPS atau `http://localhost`). Untuk bermain di HP, gunakan skrip `npm run tunnel` yang menyediakan link HTTPS otomatis via Ngrok. |
+| Kartu cetak | Enam kartu dari `public/cards/lembar-a4.svg`, dicetak di kertas A4 atau ditampilkan di layar monitor. |
+| Berkas target | 6 berkas `.mind` kartu individual sudah tersedia di `public/cards/` (`BENTENG.mind`, `BUNKER.mind`, `ROBOT.mind`, `TANK.mind`, `KESATRIA.mind`, `GARGOYLE.mind`) dan digabungkan otomatis saat runtime. |
 
 ---
 
-## 2. Cara menjalankan
+## 2. Cara Menjalankan
 
+### Opsi A: Bermain di Laptop / PC (Webcam)
 ```bash
 npm install     # pasang dependensi (sekali saja)
 npm run dev     # jalankan server pengembangan Vite
 ```
+1. Buka URL `http://localhost:5173/` di **Chrome desktop**.
+2. Klik **"Aktifkan Kamera"** dan **izinkan akses kamera**.
+3. Arahkan kamera ke meja berisi kartu fisik, tunggu kartu terdeteksi, dan mulai bermain.
 
-1. Terminal akan mencetak URL lokal, biasanya:
-
-   ```text
-   ➜  Local:   http://localhost:5173/
-   ```
-
-2. Buka URL itu di **Chrome desktop**.
-3. Klik **"Aktifkan Kamera"** dan **izinkan akses kamera** saat Chrome meminta.
-4. Arahkan kamera ke meja berisi kartu, tunggu keenam kartu terbaca, lalu tekan
-   **"Mulai Battle"**.
-
-Bila berkas target belum dibuat, tombol kamera dinonaktifkan dan aplikasi menampilkan
-pesan bahwa `targets.mind` belum tersedia. Lihat bagian 3.
+### Opsi B: Bermain di Smartphone / HP (Ngrok Tunnel + QR Code)
+Untuk pengalaman bermain terbaik menggunakan kamera smartphone:
+```bash
+npm run tunnel  # menjalankan dev server + ngrok tunnel + QR Code terminal
+```
+1. Skrip akan mendeteksi `ngrok.exe` (di Desktop atau PATH), membuat tunnel HTTPS, dan mencetak **QR Code di terminal**.
+2. **Pindai QR Code** langsung menggunakan kamera / pemindai barcode di smartphone Anda.
+3. Buka tautan HTTPS yang muncul di Chrome / Safari mobile, lalu **izinkan akses kamera**.
+4. Posisikan smartphone dalam orientasi **Landscape (Mendatar)** untuk area pandang meja yang lebih luas.
 
 ---
 
-## 3. LANGKAH PALING PENTING: cetak kartu & buat `targets.mind`
+## 3. Fitur Utama Pengalaman Mobile AR
 
-Aplikasi **tidak bisa jalan tanpa** `public/cards/targets.mind`. Berkas ini adalah hasil
-kompilasi keenam gambar kartu menjadi satu berkas target pelacakan MindAR, dan **hanya
-bisa dibuat oleh pengguna** (lihat bagian 3.2).
+1. **Anti-Tremor & Card Persistence**:
+   - Deteksi kartu dikunci (*latched*) sehingga saat tangan bergoyang (*tremor*) atau kamera bergeser sesaat, **model 3D tidak akan hilang atau berkedip**.
+   - Model 3D tetap berdiri di atas kartu dan posisinya dapat diperbarui secara mulus saat kartu digeser.
+2. **Indikator Semua Model Siap (Ready Status)**:
+   - Setiap model memiliki cincin alas proyeksi 3D di atas kartu.
+   - Saat seluruh kartu tim telah siap, cincin berubah menjadi **Hijau Neon Glowing** dan muncul banner `SEMUA MODEL SIAP!`.
+3. **Hitung Mundur Otomatis 3 Detik (Hands-Free)**:
+   - Begitu model siap, sistem otomatis menghitung mundur `3... 2... 1...` lalu langsung memulai pertempuran secara otomatis tanpa perlu menyentuh layar HP.
+4. **Unit Tempur Bergerak Keluar Dari Kartu**:
+   - Bangunan basis (**Benteng Pasir** & **Bunker Berduri**) tetap bertahan di atas kartu fisik di tepi arena.
+   - Prajurit dan artileri (**Kesatria**, **Gargoyle**, **Robot**, **Tank**) muncul di atas kartu lalu **berjalan maju keluar dari kartu (`walkTo`)** menuju arena pertempuran pasir.
+5. **Quick Action Bar**:
+   - Tombol melayang di layar: **Mode (Battle / Test)**, **Masuk Posisi** (merapikan barisan agar tidak berdempetan), **Mulai Battle**, dan **Ciutkan Panduan**.
+6. **Kombinasi Kartu Bebas (Random)**:
+   - Mendukung pertarungan acak 1v1 (duel prajurit), 2v1, 2v2, hingga 3v3 asimetris dengan kondisi kemenangan dinamis.
 
-### 3.1 Cetak kartu
+---
+
+## 4. Berkas Target Kartu (.mind)
+
+Aplikasi menggunakan 6 berkas target individual berformat MindAR di dalam folder `public/cards/`:
+- `BENTENG.mind`
+- `BUNKER.mind`
+- `ROBOT.mind`
+- `TANK.mind`
+- `KESATRIA.mind`
+- `GARGOYLE.mind`
+
+`CardTrackingController` secara otomatis memuat keenam berkas tersebut secara paralel saat runtime dan menggabungkannya ke dalam satu `Blob URL` multi-track berformat MessagePack, sehingga MindAR dapat melacak seluruh kartu sekaligus dengan cepat dan stabil.
+
+### 4.1 Cetak Kartu
 
 1. Buka **`public/cards/lembar-a4.svg`** di browser.
 2. Cetak (**Ctrl+P**) dengan setelan:
@@ -217,12 +243,13 @@ tetap sama berapa pun frame rate-nya.
 | Perintah | Kegunaan |
 | --- | --- |
 | `npm install` | Memasang dependensi. |
-| `npm run dev` | Menjalankan server pengembangan Vite (pakai ini untuk bermain). |
-| `npm test` | Menjalankan seluruh tes Node (243 tes). |
+| `npm run dev` | Menjalankan server pengembangan Vite (untuk Chrome desktop). |
+| `npm run tunnel` | **Menjalankan tunnel Ngrok HTTPS + QR Code** untuk bermain di smartphone / HP. |
+| `npm test` | Menjalankan seluruh tes Node (293 tes). |
 | `npm run build` | Build produksi ke `dist/`; folder `public/cards/` ikut tersalin ke `dist/cards/`. |
 | `npm run preview` | Melayani hasil build untuk pemeriksaan. |
 | `node scripts/build-card-sheet.mjs` | **Membuat ulang `public/cards/lembar-a4.svg`** dari keenam kartu. |
-| `node scripts/build-targets.mjs` | Memeriksa gambar kartu & keberadaan `public/cards/targets.mind`, lalu memberi instruksi kompilasi. |
+| `node scripts/build-targets.mjs` | Memeriksa gambar kartu & keberadaan berkas target `.mind`. |
 
 ---
 

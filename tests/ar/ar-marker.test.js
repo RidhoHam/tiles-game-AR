@@ -1,9 +1,9 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { encode } from '@msgpack/msgpack';
 import { CardTrackingController } from '../../src/ar/ar-marker.js';
-import { CARD_TARGETS, TARGET_FILE } from '../../src/ar/card-targets.js';
+import { CARD_TARGETS, TARGET_FILE, TARGET_FILES } from '../../src/ar/card-targets.js';
 
 // ---------------------------------------------------------------------------
 // A Node-only browser shim. Every test installs what it needs and removes it in
@@ -686,4 +686,46 @@ test('_noteError ignores unrelated errors and reports middleware failures only o
   controller._noteError(new Error('target decode failed'));
   controller._noteError(new Error('target decode failed again'));
   assert.equal(errors.length, 1, 'a repeated middleware failure must not spam onError');
+});
+
+test('controller loads and merges 6 individual target files when targetFiles is supplied', async () => {
+  const bytes = await readFile(new URL('../../public/cards/targets.mind', import.meta.url));
+  const { decode, encode: enc } = await import('@msgpack/msgpack');
+  const full = decode(new Uint8Array(bytes));
+
+  const requestedUrls = [];
+  const controller = new CardTrackingController({ targetFiles: TARGET_FILES });
+  controller._assertEnvironment = async () => {};
+  const track = liveTrack();
+  let receivedOptions;
+
+  controller._loadRuntime = async () => class {
+    constructor(opts) {
+      receivedOptions = opts;
+      this.video = fakeVideo();
+    }
+    async start() {
+      assert.match(receivedOptions.imageTargetSrc, /^blob:/);
+      this.video.srcObject = fakeStream(track);
+    }
+    stop() {}
+  };
+
+  await withGlobals({
+    fetch: async url => {
+      requestedUrls.push(url);
+      const idx = TARGET_FILES.indexOf(url);
+      if (idx >= 0) {
+        const singleBuf = enc({ v: 2, dataList: [full.dataList[idx]] });
+        return new Response(singleBuf);
+      }
+      return new Response(bytes);
+    }
+  }, async () => {
+    await controller.start();
+    assert.match(receivedOptions.imageTargetSrc, /^blob:/);
+    assert.equal(requestedUrls.slice(0, 6).length, 6);
+    controller.dispose();
+  });
+  assert.equal(track.stopped, 1);
 });

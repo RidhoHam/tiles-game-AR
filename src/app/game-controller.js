@@ -7,12 +7,13 @@ import { createSceneSystem, ArenaMesh, GuideLines, PlacementGuideOverlay } from 
 import { KNOWN_TOPS, UnitHud, defaultBarHeight } from '../scene/unit-hud.js';
 import { createUnit } from '../scene/units/unit-factory.js';
 import { CardTrackingController } from '../ar/ar-marker.js';
+import { TARGET_FILES } from '../ar/card-targets.js';
 import { createAppState } from '../ui/app-state.js';
 import { mountWizard } from '../ui/wizard.js';
 import { createToast } from '../ui/components/toast.js';
 import { AudioSystem } from '../audio/audio-system.js';
 
-import { CardPreviews } from '../scene/card-previews.js';
+import { CardPreviews, PREVIEW_SCALE } from '../scene/card-previews.js';
 import { TestModelController } from '../scene/test-model-controller.js';
 
 // Enlarge battle models only at the presentation layer. Arena calibration,
@@ -83,19 +84,39 @@ export function battleHudHeight(object3D, type, factor = BATTLE_VISUAL_SCALE) {
 //                   `faction === undefined`, `valid` was always false and a
 //                   perfectly complete 3v3 layout could NEVER start a battle.
 //                   `side` and `faction` are the same value by construction.
+export function canStartBattle(cards) {
+  const blue = (cards || []).filter(c => c.side === 'blue' || c.faction === 'blue');
+  const red = (cards || []).filter(c => c.side === 'red' || c.faction === 'red');
+  const blueAttackers = blue.filter(c => (UNIT_DEFINITIONS[c.type]?.damage ?? 0) > 0);
+  const redAttackers = red.filter(c => (UNIT_DEFINITIONS[c.type]?.damage ?? 0) > 0);
+
+  let canStart = blue.length > 0 && red.length > 0 && blueAttackers.length > 0 && redAttackers.length > 0;
+  let reason = '';
+  if (blue.length === 0 && red.length === 0) {
+    reason = 'Letakkan kartu di kiri (Biru) & kanan (Merah).';
+  } else if (blue.length === 0) {
+    reason = 'Tim Biru (sisi kiri) belum memiliki kartu.';
+  } else if (red.length === 0) {
+    reason = 'Tim Merah (sisi kanan) belum memiliki kartu.';
+  } else if (blueAttackers.length === 0) {
+    reason = 'Tim Biru butuh setidaknya 1 penyerang (Prajurit/Artileri).';
+  } else if (redAttackers.length === 0) {
+    reason = 'Tim Merah butuh setidaknya 1 penyerang (Prajurit/Artileri).';
+  }
+  return { canStart, blue, red, reason };
+}
+
 function reconcileCards(detections) {
   const list = (detections ?? [])
     .filter(card => Array.isArray(card?.worldPosition) && card.worldPosition.length === 3);
   if (list.length === 0) return [];
 
-  // `deriveArena` ignores malformed positions on its own; stamping the centre it
-  // reports keeps the validator, the arena fit and the scan screen in lockstep.
-  const centerX = deriveArena(list).centerX;
-
   return list.map(card => {
     const x = card.worldPosition[0];
-    const side = classifySide(x, centerX);
-    return { ...card, x, centerX, side, faction: side };
+    // In camera space, X=0 is the center dividing line.
+    // x < 0 is Tim Biru (left side of camera view), x > 0 is Tim Merah (right side).
+    const side = classifySide(x, 0);
+    return { ...card, x, centerX: 0, side, faction: side };
   });
 }
 
@@ -165,6 +186,87 @@ export function createGameController({ canvas, root, container, capacity } = {})
   let toast = null;
   let running = false;
   let lastMove = new Map();
+  let formationActive = false;
+
+  // Persistent scanned cards to prevent handheld camera tremor from dropping models
+  const scannedCards = new Map();
+  let countdownTimer = null;
+  let countdownSeconds = 0;
+  let readyBanner = null;
+
+  function registerScannedCard(card) {
+    if (!card?.cardId || !Array.isArray(card.pose) || card.pose.length !== 16 || !card.pose.every(Number.isFinite)) return;
+    scannedCards.set(card.cardId, {
+      ...card,
+      lastSeen: Date.now()
+    });
+  }
+
+  function getEffectiveCards() {
+    if (scannedCards.size > 0) {
+      return [...scannedCards.values()];
+    }
+    return tracking ? [...tracking.cards.values()] : [];
+  }
+
+  function updateReadyBanner(seconds) {
+    if (!root) return;
+    if (typeof seconds === 'number' && seconds > 0 && state.phase === 'scan' && state.mode === 'battle') {
+      if (!readyBanner) {
+        readyBanner = document.createElement('div');
+        readyBanner.className = 'ar-ready-banner';
+        root.append(readyBanner);
+      }
+      readyBanner.innerHTML = `
+        <span class="ar-ready-banner__icon">⚔️</span>
+        <span class="ar-ready-banner__text">SEMUA MODEL SIAP! Battle otomatis dalam</span>
+        <span class="ar-ready-banner__timer">${seconds}s</span>
+      `;
+    } else {
+      if (readyBanner) {
+        readyBanner.remove();
+        readyBanner = null;
+      }
+    }
+  }
+
+  function notifyCountdown(seconds) {
+    updateReadyBanner(seconds);
+    wizard?.setCountdown?.(seconds);
+    const currentList = getEffectiveCards();
+    const reconciled = reconcileCards(currentList);
+    const check = canStartBattle(reconciled);
+    if (state.phase === 'scan') {
+      screen()?.update?.({ cards: reconciled, errors: [], valid: check.canStart, countdown: seconds });
+    }
+  }
+
+  function startAutoCountdown() {
+    if (countdownTimer !== null || state.phase !== 'scan' || state.mode !== 'battle') return;
+    countdownSeconds = 3;
+    notifyCountdown(countdownSeconds);
+
+    countdownTimer = setInterval(() => {
+      countdownSeconds--;
+      if (countdownSeconds > 0) {
+        notifyCountdown(countdownSeconds);
+      } else {
+        cancelAutoCountdown();
+        notifyCountdown(null);
+        beginBattle();
+      }
+    }, 1000);
+  }
+
+  function cancelAutoCountdown() {
+    if (countdownTimer !== null) {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+    countdownSeconds = 0;
+    updateReadyBanner(null);
+    wizard?.setCountdown?.(null);
+  }
 
   // Battle previews are lazy: test mode owns the only model path and must never
   // allocate the battle preview collection.
@@ -255,79 +357,112 @@ export function createGameController({ canvas, root, container, capacity } = {})
 
     const scale = isFiniteNumber(arena?.scale) && arena.scale > 0 ? arena.scale : 1;
     const centerX = isFiniteNumber(arena?.centerX) ? arena.centerX : 0;
+    const centerY = isFiniteNumber(arena?.centerY) ? arena.centerY : 0;
     const centerZ = isFiniteNumber(arena?.centerZ) ? arena.centerZ : 0;
 
     const toWorld = card => ({
       x: centerX + (card.worldPosition[0] - centerX) * scale,
+      y: Number.isFinite(card.worldPosition?.[1]) ? card.worldPosition[1] : centerY,
       z: centerZ + (card.worldPosition[2] - centerZ) * scale
     });
 
-    // A unit's build animation materialises it from a LOCAL spawn offset before it
-    // walks out. The scene default is (0, 0, 2.1) world units; on a real table the
-    // arena is only ~0.4 units wide, so that offset would drop every unit far
-    // outside its own card. This is the "about one card row" distance, clamped to
-    // the arena's own depth so it is always small, finite and positive.
-    const depth = Number.isFinite(arena?.depth) && arena.depth > 0 ? arena.depth : 0;
-    const spawnOffset = Math.min(2.1, Math.max(0.06, depth * 0.5));
-
     const records = [];
     const index = factionIndex;
+    const poseRot = new THREE.Matrix4();
+    const typeCount = new Map();
 
-    for (const card of validatedCards) {
-      const id = unitId(card);
+    for (let i = 0; i < validatedCards.length; i++) {
+      const card = validatedCards[i];
+      const key = `${card.faction}-${card.type}`;
+      const count = typeCount.get(key) || 0;
+      typeCount.set(key, count + 1);
+      const id = `${card.faction}-${card.type}-${count}`;
       const spot = toWorld(card);
+      const isBase = UNIT_DEFINITIONS[card.type]?.role === 'base';
 
-      // 1. The building at the card's own world position.
-      const structure = systems.create(card.type, new THREE.Vector3(spot.x, 0, spot.z));
-      structure.group.rotation.y = card.faction === 'blue' ? Math.PI / 2 : -Math.PI / 2;
-      applyBattleVisualScale(structure);
-      structure.build();
-      structures.set(id, structure);
+      if (isBase) {
+        // 1. Base structure remains stationary and anchored on its card.
+        const structure = systems.create(card.type, new THREE.Vector3(spot.x, spot.y, spot.z));
+        structure.cardId = card.cardId;
+        applyBattleVisualScale(structure);
+        structure.build();
 
-      // 2. The unit, spawned at the card and told to walk toward the centre.
-      const unit = createUnit(card.type, unitContext(), {
-        position: new THREE.Vector3(spot.x, 0, spot.z),
-        faction: card.faction,
-        index: index(card),
-        // Materialise a short distance in front of the card, inside the arena, so
-        // the sand-assembly animation happens on the table rather than off it.
-        // `walkTo` then carries the unit the rest of the way to its goal.
-       spawnOffset: new THREE.Vector3(0, 0, spawnOffset)
-      });
-      applyBattleVisualScale(unit);
-      unit.build();
+        if (Array.isArray(card.pose) && card.pose.length === 16 && card.pose.every(Number.isFinite)) {
+          const yaw = card.faction === 'blue' ? Math.PI / 2 : -Math.PI / 2;
+          structure.group.matrixAutoUpdate = false;
+          structure.group.matrix.fromArray(card.pose)
+            .multiply(poseRot.makeRotationX(Math.PI / 2))
+            .multiply(poseRot.makeRotationY(yaw))
+            .scale(new THREE.Vector3().setScalar(BATTLE_VISUAL_SCALE * PREVIEW_SCALE * structure.modelScale));
+          structure.group.matrixWorldNeedsUpdate = true;
+          structure.group.updateWorldMatrix(true, true);
+        } else {
+          structure.group.rotation.y = card.faction === 'blue' ? Math.PI / 2 : -Math.PI / 2;
+        }
+        structures.set(id, structure);
 
-      // The goal is a point 45% of the way from this card to the arena centre.
-      // It is deliberately NOT the anchor itself: a short walk toward the middle
-      // keeps every unit in its own lane (units visibly fan out of their cards)
-      // without ever placing one inside the enemy formation before the battle
-      // system has had a chance to move it.
-      unit.walkTo(
-        spot.x + (centerX - spot.x) * 0.45,
-        spot.z + (centerZ - spot.z) * 0.45
-      );
-      units.set(id, unit);
+        hud.attach(id, structure.group, {
+          type: card.type,
+          title: UNIT_DEFINITIONS[card.type]?.title ?? card.type,
+          faction: card.faction,
+          height: battleHudHeight(structure.group, card.type),
+          health: structure.health,
+          maxHealth: structure.maxHealth
+        });
 
-       hud.attach(id, unit.group, {
-         type: card.type,
-         title: UNIT_DEFINITIONS[card.type]?.title ?? card.type,
-         faction: card.faction,
-         height: battleHudHeight(unit.group, card.type),
-         health: unit.health,
-        maxHealth: unit.maxHealth
-      });
+        records.push({
+          id,
+          type: card.type,
+          faction: card.faction,
+          health: structure.health,
+          maxHealth: structure.maxHealth,
+          cooldown: 0,
+          position: { x: spot.x, z: spot.z },
+          targetId: null,
+          alive: true
+        });
+      } else {
+        // 2. Mobile combat unit: spawns directly at card and walks out into battle!
+        const unit = createUnit(card.type, unitContext(), {
+          position: new THREE.Vector3(spot.x, spot.y, spot.z),
+          faction: card.faction,
+          index: count,
+          spawnOffset: new THREE.Vector3(spot.x, spot.y, spot.z)
+        });
+        applyBattleVisualScale(unit);
+        unit.build();
 
-      records.push({
-        id,
-        type: card.type,
-        faction: card.faction,
-        health: unit.health,
-        maxHealth: unit.maxHealth,
-        cooldown: 0,
-        position: { x: spot.x, z: spot.z },
-        targetId: null,
-        alive: true
-      });
+        // The mobile unit marches out from its card into the battle arena
+        const factionCards = validatedCards.filter(c => c.faction === card.faction);
+        const cardIndexInFaction = factionCards.indexOf(card);
+        const laneOffset = ((cardIndexInFaction % 3) - 1) * 0.85;
+        const forwardRatio = UNIT_DEFINITIONS[card.type]?.role === 'prajurit' ? 0.6 : 0.4;
+        const targetX = spot.x + (centerX - spot.x) * forwardRatio;
+        const targetZ = spot.z + (centerZ - spot.z) * forwardRatio + laneOffset;
+        unit.walkTo(targetX, targetZ);
+        units.set(id, unit);
+
+        hud.attach(id, unit.group, {
+          type: card.type,
+          title: UNIT_DEFINITIONS[card.type]?.title ?? card.type,
+          faction: card.faction,
+          height: battleHudHeight(unit.group, card.type),
+          health: unit.health,
+          maxHealth: unit.maxHealth
+        });
+
+        records.push({
+          id,
+          type: card.type,
+          faction: card.faction,
+          health: unit.health,
+          maxHealth: unit.maxHealth,
+          cooldown: 0,
+          position: { x: spot.x, z: spot.z },
+          targetId: null,
+          alive: true
+        });
+      }
     }
 
     const validation = battle.configure({ units: records });
@@ -390,7 +525,11 @@ export function createGameController({ canvas, root, container, capacity } = {})
 
     if (event.type === 'destroy') {
       const structure = structures.get(event.unitId);
-      if (structure?.state === 'built') structure.destroy();
+      if (structure) {
+        if (structure.state === 'built') structure.destroy();
+        hud.detach(event.unitId);
+        structures.delete(event.unitId);
+      }
       // Collapse plume, read BEFORE the model is dropped from the maps below.
       effects.unitCollapse(worldSpot(structure) ?? worldSpot(units.get(event.unitId)));
       const unit = units.get(event.unitId);
@@ -423,6 +562,8 @@ export function createGameController({ canvas, root, container, capacity } = {})
   function maxHealthOf(targetId) {
     const record = battle?.units?.get?.(targetId);
     if (isFiniteNumber(record?.maxHealth) && record.maxHealth > 0) return record.maxHealth;
+    const structure = structures.get(targetId);
+    if (isFiniteNumber(structure?.maxHealth) && structure.maxHealth > 0) return structure.maxHealth;
     const unit = units.get(targetId);
     if (isFiniteNumber(unit?.maxHealth) && unit.maxHealth > 0) return unit.maxHealth;
     const definition = UNIT_DEFINITIONS[record?.type ?? '']?.maxHealth;
@@ -450,6 +591,7 @@ export function createGameController({ canvas, root, container, capacity } = {})
 
     tracking = new CardTrackingController({
       container: arContainer,
+      targetFiles: TARGET_FILES,
       onCards: handleCards,
       onError: error => showToast(error?.message ?? 'Pelacakan kartu gagal.')
     });
@@ -475,7 +617,13 @@ export function createGameController({ canvas, root, container, capacity } = {})
 
   function handleCards(detections) {
     if (disposed) return;
-    const reconciled = reconcileCards(detections);
+    if (Array.isArray(detections)) {
+      for (const card of detections) {
+        registerScannedCard(card);
+      }
+    }
+    const currentList = getEffectiveCards();
+    const reconciled = reconcileCards(currentList);
     if (state.mode === 'test') {
       const card = selectTestCard(reconciled);
       testModel.sync(card);
@@ -483,24 +631,41 @@ export function createGameController({ canvas, root, container, capacity } = {})
       if (state.phase === 'scan') screen()?.update?.({
         card,
         model: testModel.model,
-         title: UNIT_DEFINITIONS[card?.type]?.title ?? card?.type ?? '',
-         actionLabel: testModel.model?.actionLabel ?? '',
+        title: UNIT_DEFINITIONS[card?.type]?.title ?? card?.type ?? '',
+        actionLabel: testModel.model?.actionLabel ?? '',
         status: card ? (testModel.model ? 'Model siap diuji.' : 'Pose kartu tidak tersedia.') : 'Arahkan kamera ke satu kartu.'
       });
       return;
     }
     if (state.phase === 'scan') battlePreviews().sync(reconciled);
+    const battleCheck = canStartBattle(reconciled);
     const result = validateTeams(reconciled);
-    state.setCards(reconciled, result);
-    if (state.phase === 'scan') screen()?.update?.({ cards: reconciled, errors: result.errors, valid: result.valid });
+    const isReady = battleCheck.canStart || result.valid;
+    battlePreviews().setReady(isReady);
+    const errors = battleCheck.canStart ? [] : (battleCheck.reason ? [battleCheck.reason] : result.errors);
+    state.setCards(reconciled, { valid: isReady, errors, bySide: result.bySide });
+    if (state.phase === 'scan') {
+      screen()?.update?.({ cards: reconciled, errors, valid: isReady, countdown: countdownSeconds > 0 ? countdownSeconds : null });
+    }
+
+    if (isReady && state.phase === 'scan' && state.mode === 'battle') {
+      startAutoCountdown();
+    } else {
+      cancelAutoCountdown();
+    }
   }
+
   function beginBattle() {
+    cancelAutoCountdown();
     if (disposed || state.phase !== 'scan') return false;
-    const reconciled = state.cards ?? [];
+    const currentList = getEffectiveCards();
+    const reconciled = reconcileCards(currentList);
+    const check = canStartBattle(reconciled);
     const result = validateTeams(reconciled);
-    if (!result.valid) {
-      showToast(result.errors[0] ?? 'Tim belum lengkap.');
-      screen()?.update?.({ cards: reconciled, errors: result.errors, valid: false });
+    if (!check.canStart && !result.valid) {
+      const message = check.reason || result.errors[0] || 'Tim belum siap bertempur.';
+      showToast(message);
+      screen()?.update?.({ cards: reconciled, errors: [message], valid: false });
       return false;
     }
 
@@ -534,19 +699,13 @@ export function createGameController({ canvas, root, container, capacity } = {})
   }
 
   function replayBattle() {
-    // `result -> scan` is the only legal edge out of result, and it deliberately
-    // does NOT touch the camera: the player re-uses the same table layout and the
-    // tracker keeps running, so the next battle starts from live detections.
+    cancelAutoCountdown();
+    scannedCards.clear();
     clearBattlefield();
-    // Previews are cleared on the way back too: `scan` is reached with an empty
-    // preview map, so a model can never survive a full battle/replay cycle into
-    // the next scan.
     clearPreviews();
-    // The arena mirrors are reset to the fallback box rather than disposed: the
-    // same ArenaMesh instance is reused on the next battle and disposing it here
-    // would leave an invisible floor behind the units.
     arenaMesh.apply(null);
     arena = null;
+    formationActive = false;
     state.goTo('scan');
   }
 
@@ -556,14 +715,15 @@ export function createGameController({ canvas, root, container, capacity } = {})
     screen()?.update?.({
       card: testModel.card,
       model: testModel.model,
-       title: UNIT_DEFINITIONS[testModel.card?.type]?.title ?? testModel.card?.type ?? '',
-       actionLabel: testModel.model?.actionLabel ?? '',
+      title: UNIT_DEFINITIONS[testModel.card?.type]?.title ?? testModel.card?.type ?? '',
+      actionLabel: testModel.model?.actionLabel ?? '',
       status: result.message
     });
     return result.ok;
   }
 
   function rescanTest() {
+    scannedCards.clear();
     handleCards(tracking ? [...tracking.cards.values()] : []);
   }
 
@@ -580,13 +740,33 @@ export function createGameController({ canvas, root, container, capacity } = {})
     },
     scan: {
       onStart() { return state.mode === 'test' ? true : beginBattle(); },
-      // "Pindai Ulang" re-reads the CURRENT detection map and re-validates it.
-      // The tracker is deliberately NOT stopped: stop() releases the camera and
-      // the next start() would re-prompt for permission. A card that went out of
-      // view is picked up on the tracker's own next poll regardless.
-      onRescan() { return state.mode === 'test' ? rescanTest() : handleCards(tracking ? [...tracking.cards.values()] : []); },
+      onRescan() {
+        cancelAutoCountdown();
+        scannedCards.clear();
+        clearPreviews();
+        if (state.mode === 'test') return rescanTest();
+        handleCards(tracking ? [...tracking.cards.values()] : []);
+        showToast('Pemindaian diulang. Arahkan kamera ke kartu.');
+      },
       onAction(action) { if (state.mode === 'test') return handleTestAction(action); },
-      onBack() { if (state.mode === 'test') return backFromTest(); }
+      onBack() { if (state.mode === 'test') return backFromTest(); },
+      onFormPosition() {
+        formationActive = !formationActive;
+        battlePreviews().setFormation(formationActive);
+        showToast(formationActive ? 'Unit berbaris di posisi formasi di depan garis.' : 'Unit kembali ke atas kartu.');
+      }
+    },
+    onSelectMode(mode) {
+      if (state.mode === mode) return;
+      cancelAutoCountdown();
+      scannedCards.clear();
+      clearPreviews();
+      state.setMode(mode);
+      showToast(`Mode diubah ke: ${mode === 'battle' ? 'Mode Battle' : 'Mode Test'}`);
+      if (state.phase === 'scan') {
+        wizard?.render(state.phase);
+        handleCards(tracking ? [...tracking.cards.values()] : []);
+      }
     },
     battle: {
       onOpenMenu() { screen()?.openMenu?.(); },
@@ -608,15 +788,72 @@ export function createGameController({ canvas, root, container, capacity } = {})
   // Frame loop
   // ---------------------------------------------------------------------------
 
+  function syncCameraWithAR() {
+    const arCam = tracking?.arCamera;
+    if (arCam && arCam.projectionMatrix) {
+      if (Number.isFinite(arCam.fov)) camera.fov = arCam.fov;
+      if (Number.isFinite(arCam.near)) camera.near = arCam.near;
+      if (Number.isFinite(arCam.far)) camera.far = arCam.far;
+      if (Number.isFinite(arCam.aspect)) camera.aspect = arCam.aspect;
+      camera.projectionMatrix.copy(arCam.projectionMatrix);
+      if (arCam.projectionMatrixInverse && camera.projectionMatrixInverse) {
+        camera.projectionMatrixInverse.copy(arCam.projectionMatrixInverse);
+      }
+      camera.position.set(0, 0, 0);
+      camera.quaternion.set(0, 0, 0, 1);
+      camera.scale.set(1, 1, 1);
+      camera.matrix.identity();
+      camera.matrixWorld.identity();
+      camera.matrixWorldInverse.identity();
+    }
+  }
+
+  function updateBattleStructures() {
+    if (!tracking?.cards || structures.size === 0) return;
+    const rot = new THREE.Matrix4();
+    for (const card of tracking.cards.values()) {
+      if (!Array.isArray(card?.pose) || card.pose.length !== 16 || !card.pose.every(Number.isFinite)) continue;
+      for (const [id, structure] of structures) {
+        if (structure.cardId === card.cardId || (!structure.cardId && id.includes(`-${card.type}-`))) {
+          const isBlue = id.startsWith('blue-');
+          const yaw = isBlue ? Math.PI / 2 : -Math.PI / 2;
+          structure.group.matrixAutoUpdate = false;
+          structure.group.matrix.fromArray(card.pose)
+            .multiply(rot.makeRotationX(Math.PI / 2))
+            .multiply(rot.makeRotationY(yaw))
+            .scale(new THREE.Vector3().setScalar(BATTLE_VISUAL_SCALE * PREVIEW_SCALE * structure.modelScale));
+          structure.group.matrixWorldNeedsUpdate = true;
+          structure.group.updateWorldMatrix(true, true);
+          break;
+        }
+      }
+    }
+  }
+
   function updateFrame() {
     const dt = Math.min(clock.getDelta(), 0.05);
     const phase = state.phase;
 
-    if (phase === 'scan' && state.mode === 'battle') battlePreviews().sync(reconcileCards(tracking ? [...tracking.cards.values()] : []));
+    syncCameraWithAR();
+
+    if (phase === 'scan' && tracking?.cards) {
+      for (const card of tracking.cards.values()) {
+        registerScannedCard(card);
+      }
+    }
+
+    if (phase === 'scan' && state.mode === 'battle') {
+      const currentList = getEffectiveCards();
+      const reconciled = reconcileCards(currentList);
+      battlePreviews().sync(reconciled);
+      const battleCheck = canStartBattle(reconciled);
+      battlePreviews().setReady(battleCheck.canStart);
+    }
     systems.update(dt);
     updateUnits(dt);
     if (phase === 'scan' && state.mode === 'test') testModel.update(dt);
 
+    if (phase === 'battle') updateBattleStructures();
     if (battle && battle.state === 'running') battle.update(dt);
 
     updateGuides(phase);
@@ -675,22 +912,63 @@ export function createGameController({ canvas, root, container, capacity } = {})
     return deriveArena(reconciled);
   }
 
+  let resizeTimer = null;
+  function onWindowResize() {
+    if (typeof innerWidth !== 'undefined' && typeof innerHeight !== 'undefined') {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+      tracking?.resize?.();
+      syncCameraWithAR();
+    }
+  }
+
+  function handleWindowResize() {
+    onWindowResize();
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      globalThis.requestAnimationFrame(onWindowResize);
+    }
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(onWindowResize, 150);
+  }
+
   function start() {
     wizard = mountWizard(root, state, handlers);
     toast = createToast(root);
     running = true;
+    if (typeof globalThis.addEventListener === 'function') {
+      globalThis.addEventListener('resize', handleWindowResize);
+      globalThis.addEventListener('orientationchange', handleWindowResize);
+      if (globalThis.screen?.orientation?.addEventListener) {
+        globalThis.screen.orientation.addEventListener('change', handleWindowResize);
+      }
+    }
     renderer.setAnimationLoop(updateFrame);
   }
 
   function dispose() {
     if (disposed) return;
     disposed = true;
+    if (typeof globalThis.removeEventListener === 'function') {
+      globalThis.removeEventListener('resize', handleWindowResize);
+      globalThis.removeEventListener('orientationchange', handleWindowResize);
+      if (globalThis.screen?.orientation?.removeEventListener) {
+        globalThis.screen.orientation.removeEventListener('change', handleWindowResize);
+      }
+    }
+    clearTimeout(resizeTimer);
     unsubscribePreviews();
     testModel.dispose();
     if (running) {
       renderer.setAnimationLoop(null);
       running = false;
     }
+    cancelAutoCountdown();
+    if (readyBanner) {
+      readyBanner.remove();
+      readyBanner = null;
+    }
+    scannedCards.clear();
     clearTimeouts();
     // Previews go first so their owned structures leave the scene before tracking stops.
     // be released before `tracking.dispose()` tears those groups down.

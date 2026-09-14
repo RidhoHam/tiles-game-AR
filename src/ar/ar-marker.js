@@ -1,5 +1,5 @@
 import { normalizeDetections } from './card-tracking.js';
-import { CARD_TARGETS, TARGET_FILE } from './card-targets.js';
+import { CARD_TARGETS, TARGET_FILE, TARGET_FILES } from './card-targets.js';
 
 // The MindAR image-tracking runtime is a browser-only ESM bundle. It is
 // installed with:
@@ -46,7 +46,7 @@ const CAMERA_TRACK_MISSING_MESSAGE =
   'Kamera terbuka tetapi tidak mengirim gambar video. Periksa kamera lain yang sedang dipakai lalu muat ulang halaman.';
 
 export class CardTrackingController {
-  constructor({ container, onCards, onError, media } = {}) {
+  constructor({ container, onCards, onError, media, targetFiles, targetFile } = {}) {
     this.container = container ?? null;
     this.onCards = onCards;
     this.onError = onError;
@@ -55,6 +55,8 @@ export class CardTrackingController {
     // browser global is read lazily, so this module never touches `navigator`
     // at import time.
     this.media = media ?? null;
+    this.targetFiles = targetFiles ?? null;
+    this.targetFile = targetFile ?? null;
 
     this.cards = new Map();
 
@@ -86,6 +88,10 @@ export class CardTrackingController {
 
   get camera() {
     return this.video ?? this.mindar?.video ?? null;
+  }
+
+  get arCamera() {
+    return this.mindar?.camera ?? null;
   }
 
   /**
@@ -130,21 +136,23 @@ export class CardTrackingController {
          this._assertLiveVideoTrack(supplied);
        }
 
-       if (!this.mindar) {
-         const MindARThree = await this._loadRuntime();
-         checkCancelled();
-         await this._fetchTargets(checkCancelled);
-         checkCancelled();
-         this.mindar = new MindARThree({
-          container: this.container,
-          // MindAR fetches this URL itself; preflight above validates the response.
-          imageTargetSrc: TARGET_FILE,
-          maxTrack: CARD_TARGETS.length,
-          uiLoading: 'no',
-          uiScanning: 'no',
-          uiError: 'no'
-         });
-         startup.mindar = this.mindar;
+        if (!this.mindar) {
+          const MindARThree = await this._loadRuntime();
+          checkCancelled();
+          const targetSrc = await this._fetchTargets(checkCancelled);
+          checkCancelled();
+          this.mindar = new MindARThree({
+            container: this.container,
+            // MindAR fetches this URL itself; preflight above validates the response.
+            imageTargetSrc: targetSrc,
+            maxTrack: CARD_TARGETS.length,
+            uiLoading: 'no',
+            uiScanning: 'no',
+            uiError: 'no',
+            warmupTolerance: 3,
+            missTolerance: 10
+          });
+          startup.mindar = this.mindar;
         // MindAR creates these; record them so dispose() can remove them.
         this.createdNodes = this._childNodes();
       }
@@ -252,18 +260,69 @@ export class CardTrackingController {
   async _fetchTargets(checkCancelled = () => {}) {
     const fetchImpl = defaultFetch();
     if (!fetchImpl) {
-      throw new Error(`Tidak bisa memuat berkas target '${TARGET_FILE}': fetch tidak tersedia di lingkungan ini.`);
+      throw new Error(`Tidak bisa memuat berkas target: fetch tidak tersedia di lingkungan ini.`);
     }
+
+    // When targetFiles is configured, load the 6 individual .mind files and merge their targets
+    if (Array.isArray(this.targetFiles) && this.targetFiles.length === CARD_TARGETS.length) {
+      try {
+        const fileResponses = await Promise.all(
+          CARD_TARGETS.map(async (card, idx) => {
+            const file = this.targetFiles[idx] || card.mindFile;
+            let res = await fetchImpl(file);
+            if (!res?.ok && card.mindFile) {
+              const lower = card.mindFile.toLowerCase();
+              if (lower !== card.mindFile) res = await fetchImpl(lower);
+            }
+            return res;
+          })
+        );
+        checkCancelled();
+
+        if (fileResponses.every(r => r?.ok)) {
+          const { decode, encode } = await import('@msgpack/msgpack');
+          checkCancelled();
+          const combinedTargets = [];
+
+          for (let i = 0; i < fileResponses.length; i++) {
+            const buf = await fileResponses[i].arrayBuffer();
+            checkCancelled();
+            const data = decode(new Uint8Array(buf));
+            if (data?.v === 2 && Array.isArray(data.dataList) && data.dataList.length > 0) {
+              const target = data.dataList.length === 1 ? data.dataList[0] : (data.dataList[i] || data.dataList[0]);
+              if (target?.targetImage?.width > 0 && target?.targetImage?.height > 0 &&
+                  Array.isArray(target.trackingData) && target.trackingData.length &&
+                  Array.isArray(target.matchingData) && target.matchingData.length) {
+                combinedTargets.push(target);
+              }
+            }
+          }
+
+          if (combinedTargets.length === CARD_TARGETS.length) {
+            const mergedBuffer = encode({ v: 2, dataList: combinedTargets });
+            if (typeof globalThis.Blob !== 'undefined' && typeof globalThis.URL?.createObjectURL === 'function') {
+              const blob = new Blob([mergedBuffer], { type: 'application/octet-stream' });
+              return URL.createObjectURL(blob);
+            }
+          }
+        }
+      } catch (error) {
+        checkCancelled();
+        if (error?.name === 'AbortError') throw error;
+      }
+    }
+
+    const singleTarget = this.targetFile ?? TARGET_FILE;
     let response;
     try {
-      response = await fetchImpl(TARGET_FILE);
+      response = await fetchImpl(singleTarget);
       checkCancelled();
     } catch (error) {
       checkCancelled();
-      throw new Error(`Berkas target '${TARGET_FILE}' tidak bisa diambil (${errorMessage(error)}). Pastikan berkas ada di public/cards/targets.mind.`);
+      throw new Error(`Berkas target '${singleTarget}' tidak bisa diambil (${errorMessage(error)}). Pastikan berkas ada di public/cards/targets.mind atau 6 berkas .mind kartu.`);
     }
     if (!response?.ok) {
-      throw new Error(`Berkas target '${TARGET_FILE}' tidak ditemukan (HTTP ${response?.status ?? '???'}). Kompilasi keenam gambar kartu dengan Image Target Compiler MindAR di https://hiukim.github.io/mind-ar-js-doc/tools/compile lalu letakkan hasilnya di public/cards/targets.mind. Langkah lengkap ada di public/cards/README.md.`);
+      throw new Error(`Berkas target '${singleTarget}' tidak ditemukan (HTTP ${response?.status ?? '???'}). Kompilasi keenam gambar kartu dengan Image Target Compiler MindAR di https://hiukim.github.io/mind-ar-js-doc/tools/compile lalu letakkan hasilnya di public/cards/targets.mind. Langkah lengkap ada di public/cards/README.md.`);
     }
     try {
       const buffer = await response.arrayBuffer();
@@ -279,9 +338,9 @@ export class CardTrackingController {
       }
     } catch (error) {
       checkCancelled();
-      throw new Error(`Berkas target '${TARGET_FILE}' ada tetapi tidak bisa dibaca sebagai target MindAR (format/kompilasi tidak valid). Kompilasi ulang keenam gambar kartu dengan Image Target Compiler MindAR lalu ganti public/cards/targets.mind. (${errorMessage(error)})`);
+      throw new Error(`Berkas target '${singleTarget}' ada tetapi tidak bisa dibaca sebagai target MindAR (format/kompilasi tidak valid). Kompilasi ulang keenam gambar kartu dengan Image Target Compiler MindAR lalu ganti public/cards/targets.mind. (${errorMessage(error)})`);
     }
-    return TARGET_FILE;
+    return singleTarget;
   }
 
   // ---------------------------------------------------------------------------
@@ -327,8 +386,8 @@ export class CardTrackingController {
   _configureDisplay() {
     const video = this.camera;
     if (!video) return;
-    video.width = 640;
-    video.height = 480;
+    video.width = video.videoWidth || 640;
+    video.height = video.videoHeight || 480;
   }
 
   // ---------------------------------------------------------------------------
@@ -351,11 +410,40 @@ export class CardTrackingController {
     }
   }
 
+  resize() {
+    if (this.onResize) this.onResize();
+    else {
+      this.mindar?.resize?.();
+      this._configureDisplay();
+    }
+  }
+
   _startLoop() {
     this.renderer = this.mindar?.renderer ?? null;
     if (!this.renderer || typeof this.renderer.render !== 'function') return;
-    this.onResize = () => this.mindar?.resize?.();
-    if (typeof globalThis.addEventListener === 'function') globalThis.addEventListener('resize', this.onResize);
+
+    const performResize = () => {
+      this.mindar?.resize?.();
+      this._configureDisplay();
+    };
+
+    let resizeTimer = null;
+    this.onResize = () => {
+      performResize();
+      if (typeof globalThis.requestAnimationFrame === 'function') {
+        globalThis.requestAnimationFrame(performResize);
+      }
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(performResize, 150);
+    };
+
+    if (typeof globalThis.addEventListener === 'function') {
+      globalThis.addEventListener('resize', this.onResize);
+      globalThis.addEventListener('orientationchange', this.onResize);
+      if (globalThis.screen?.orientation?.addEventListener) {
+        globalThis.screen.orientation.addEventListener('change', this.onResize);
+      }
+    }
     this.onFrame = () => {
       if (!this.running) return;
       try {
@@ -547,6 +635,10 @@ export class CardTrackingController {
     }
     if (typeof globalThis.removeEventListener === 'function' && this.onResize) {
       globalThis.removeEventListener('resize', this.onResize);
+      globalThis.removeEventListener('orientationchange', this.onResize);
+      if (globalThis.screen?.orientation?.removeEventListener) {
+        globalThis.screen.orientation.removeEventListener('change', this.onResize);
+      }
     }
     this.onResize = null;
     this.onFrame = null;

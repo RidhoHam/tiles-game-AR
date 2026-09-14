@@ -1,4 +1,4 @@
-﻿/* Screen-space placement guide: three DOM lines over the camera feed.
+/* Screen-space placement guide: three DOM lines over the camera feed.
  *
  * WHAT THIS IS FOR
  * ----------------
@@ -56,9 +56,9 @@ export class PlacementGuideOverlay {
     // the zone lines bracket it symmetrically at 32% / 68%, which is roughly
     // where a card row reads in a portrait camera view.
     const SPECS = [
-      { modifier: 'left', fraction: 0.32 },
-      { modifier: 'center', fraction: 0.5 },
-      { modifier: 'right', fraction: 0.68 }
+      { modifier: 'left', fraction: 0.32, label: '🔵 Tim Biru' },
+      { modifier: 'center', fraction: 0.5, label: '⚔️ Garis Tengah' },
+      { modifier: 'right', fraction: 0.68, label: '🔴 Tim Merah' }
     ];
 
     for (const spec of SPECS) {
@@ -67,6 +67,13 @@ export class PlacementGuideOverlay {
       line.dataset.fraction = String(spec.fraction);
       line.style.setProperty('--guide-x', `${spec.fraction * 100}%`);
       line.style.pointerEvents = 'none';
+
+      const label = document.createElement('span');
+      label.className = `placement-guide__label placement-guide__label--${spec.modifier}`;
+      label.textContent = spec.label;
+      label.style.pointerEvents = 'none';
+      line.append(label);
+
       host.append(line);
       this.lines.push(line);
     }

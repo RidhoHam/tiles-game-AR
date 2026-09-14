@@ -1,4 +1,4 @@
-﻿// Role/range battle domain. Pure logic: no Three.js, no DOM, no tracking.
+// Role/range battle domain. Pure logic: no Three.js, no DOM, no tracking.
 // A BattleField owns the units of one battle and answers three questions for
 // the battle system: who can I attack, can I hit them yet, and where do I walk
 // when nothing is in reach.
@@ -205,23 +205,16 @@ export class BattleField {
     const ux = dx / gap;
     const uz = dz / gap;
 
-    // Preferred move, then the same move clamped so it lands on the standoff
-    // ring instead of walking into a base.
+    // Preferred move, then clamped if it would overshoot or hit standoff.
     let nextX = unit.position.x + ux * step;
     let nextZ = unit.position.z + uz * step;
     if (destination.standoff && gap - step < BASE_STANDOFF) {
       const shorten = Math.max(0, gap - BASE_STANDOFF);
       nextX = unit.position.x + ux * shorten;
       nextZ = unit.position.z + uz * shorten;
-    }
-
-    // Do not spend the step on z once the left/right overlap with a walking
-    // enemy is already good: an attacker should hold its own lane rather than
-    // wander onto the enemy's row. This never applies to a base objective, so a
-    // unit with a base dead ahead still closes the full 2D gap.
-    if (destination.unit && Math.abs(dx) <= AXIS_EPSILON && Math.abs(dz) > AXIS_EPSILON) {
-      nextX = unit.position.x;
-      nextZ = unit.position.z + uz * step;
+    } else if (!destination.standoff && step >= gap) {
+      nextX = destination.x;
+      nextZ = destination.z;
     }
 
     if (!isFiniteNumber(nextX) || !isFiniteNumber(nextZ)) return false;
@@ -233,32 +226,35 @@ export class BattleField {
   }
 
   /**
-   * The point this unit walks toward when it has no target in range: the enemy
-   * base in x, on the z lane of the nearest living enemy. `standoff` asks the
-   * mover to stop BASE_STANDOFF short of the base itself.
+   * The point this unit walks toward when it has no target in range:
+   * Finds the nearest living enemy in 2D Euclidean distance. If that target
+   * is a base, requests standoff so the unit halts outside it.
    */
   objectiveFor(unit) {
     if (!isAlive(unit)) return null;
-    const base = this.baseTargetFor(unit);
-    if (!base) return null;
 
-    // Lane: the nearest living enemy in z decides which row to walk on. `unit`
-    // is only set when that enemy is a real unit (not the base itself), which
-    // the mover uses to hold its lane instead of chasing a body.
-    let z = base.position.z;
-    let bestDistance = Math.abs(base.position.z - unit.position.z);
-    let lane = null;
+    let best = null;
+    let bestDistance = Infinity;
+
     for (const candidate of this.units.values()) {
       if (!isAlive(candidate) || candidate.faction === unit.faction) continue;
-      const gap = Math.abs(candidate.position.z - unit.position.z);
-      if (gap < bestDistance) {
+      const gap = this.distance(unit, candidate);
+      if (gap === null) continue;
+      if (gap < bestDistance || (gap === bestDistance && best && candidate.id < best.id)) {
+        best = candidate;
         bestDistance = gap;
-        z = candidate.position.z;
-        lane = candidate.role === 'base' ? null : candidate;
       }
     }
 
-    return { x: base.position.x, z, standoff: true, unit: lane };
+    if (!best) return null;
+
+    return {
+      x: best.position.x,
+      z: best.position.z,
+      standoff: best.role === 'base',
+      unit: best.role === 'base' ? null : best,
+      target: best
+    };
   }
 
   #definitionFor(unit) {

@@ -22,7 +22,7 @@ export function createScreenTest(root, state, handlers = {}) {
 
   const hint = document.createElement('p');
   hint.className = 'screen-test__hint';
-  hint.textContent = 'Letakkan satu kartu di tengah kamera untuk menguji model 3D.';
+  hint.textContent = 'Arahkan kamera tegak lurus ke kartu pada jarak ~35-50 cm dengan cahaya terang. Jika menggunakan kamera laptop, berdirikan kartu sejajar layar agar tidak buram.';
 
   const cardStatus = document.createElement('div');
   cardStatus.className = 'screen-test__card';
